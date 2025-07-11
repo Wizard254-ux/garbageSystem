@@ -162,7 +162,6 @@ const getProfile = async (req, res) => {
   }
 };
 
-
 const manageOrganization = async (req, res) => {
   try {
     const { action, organizationId, updateData } = req.body;
@@ -526,30 +525,6 @@ const getOrganizationStats = async (req, res) => {
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const editOrganization = async (req, res, organization, updateData) => {
   try {
     if (!updateData || Object.keys(updateData).length === 0) {
@@ -655,9 +630,6 @@ const deleteOrganization = async (req, res, organization) => {
     throw error;
   }
 };
-
-
-
 
 const manageOrganizationUsers = async (req, res) => {
   try {
