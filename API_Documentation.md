@@ -113,6 +113,9 @@ General registration endpoint (for initial admin setup).
 - `route` (string, required for clients)
 - `pickUpDay` (string, required for clients): monday, tuesday, etc.
 - `address` (string, required for clients)
+- `clientType` (string, required for clients): residential or commercial
+- `serviceStartDate` (string, required for clients): YYYY-MM-DD format
+- `monthlyRate` (number, required for clients): Monthly service fee in KES
 
 #### POST /auth/register/organization
 Register a new organization (Admin only).
@@ -606,6 +609,272 @@ Consider implementing rate limiting for production use, especially for:
 
 ## Postman Collection
 Import the provided `Garbage_System_API.postman_collection.json` file into Postman to test all endpoints with pre-configured requests.
+
+### 8. Payment Management Endpoints
+
+#### POST /payments/process
+Process payment via M-Pesa/Paybill.
+
+**Request Body:**
+```json
+{
+  "accountNumber": "RES123456",
+  "amount": 2500,
+  "paymentMethod": "paybill",
+  "mpesaReceiptNumber": "QA12B3C4D5",
+  "phoneNumber": "+254712345678",
+  "transactionId": "TXN123456789"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Payment processed successfully",
+  "data": {
+    "payment": {
+      "userId": "user_id",
+      "accountNumber": "RES123456",
+      "amount": 2500,
+      "status": "completed"
+    },
+    "invoice": {
+      "invoiceNumber": "INV-202401-1234",
+      "totalAmount": 2500,
+      "amountPaid": 2500,
+      "status": "paid"
+    },
+    "overpayment": 0
+  }
+}
+```
+
+#### POST /payments/generate-invoices
+Generate monthly invoices for all active clients (Admin/Organization only).
+
+**Authorization:** Required (Admin or Organization role)
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Generated 25 invoices",
+  "invoices": [
+    {
+      "invoiceNumber": "INV-202401-1234",
+      "userId": "client_id",
+      "accountNumber": "RES123456",
+      "totalAmount": 2500,
+      "dueDate": "2024-02-07"
+    }
+  ]
+}
+```
+
+#### GET /payments/history/{accountNumber}
+Get payment history for an account.
+
+**Authorization:** Required (Admin, Organization, or Client role)
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "payments": [
+      {
+        "amount": 2500,
+        "paymentMethod": "paybill",
+        "mpesaReceiptNumber": "QA12B3C4D5",
+        "status": "completed",
+        "paidAt": "2024-01-15T10:30:00Z",
+        "invoiceId": {
+          "invoiceNumber": "INV-202401-1234",
+          "billingPeriod": {
+            "start": "2024-01-01",
+            "end": "2024-01-31"
+          }
+        }
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 3,
+      "totalPayments": 25,
+      "hasNext": true,
+      "hasPrev": false
+    }
+  }
+}
+```
+
+#### GET /payments/statement/{accountNumber}
+Get detailed account statement.
+
+**Authorization:** Required (Admin, Organization, or Client role)
+
+**Query Parameters:**
+- `startDate` (optional): Start date (YYYY-MM-DD)
+- `endDate` (optional): End date (YYYY-MM-DD)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "name": "John Client",
+      "accountNumber": "RES123456",
+      "clientType": "residential"
+    },
+    "summary": {
+      "totalInvoiced": 7500,
+      "totalPaid": 5000,
+      "totalOverpayment": 0,
+      "outstandingBalance": 2500
+    },
+    "invoices": [
+      {
+        "invoiceNumber": "INV-202401-1234",
+        "totalAmount": 2500,
+        "amountPaid": 2500,
+        "remainingBalance": 0,
+        "status": "paid",
+        "dueDate": "2024-02-07"
+      }
+    ],
+    "payments": [
+      {
+        "amount": 2500,
+        "paymentMethod": "paybill",
+        "paidAt": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "overpayments": []
+  }
+}
+```
+
+## Enhanced Data Models
+
+### Updated User Model
+```json
+{
+  "id": "string",
+  "name": "string",
+  "email": "string",
+  "phone": "string",
+  "role": "admin|organization|driver|client",
+  "isActive": "boolean",
+  "organizationId": "string (for drivers and clients)",
+  "route": "string (for clients only)",
+  "pickUpDay": "string (for clients only)",
+  "address": "string (for clients only)",
+  "clientType": "residential|commercial (for clients only)",
+  "accountNumber": "string (for clients only)",
+  "serviceStartDate": "date (for clients only)",
+  "monthlyRate": "number (for clients only)",
+  "documents": ["array of file paths"],
+  "createdAt": "date",
+  "updatedAt": "date"
+}
+```
+
+### Invoice Model
+```json
+{
+  "id": "string",
+  "invoiceNumber": "string",
+  "userId": "string",
+  "accountNumber": "string",
+  "billingPeriod": {
+    "start": "date",
+    "end": "date"
+  },
+  "totalAmount": "number",
+  "amountPaid": "number",
+  "remainingBalance": "number",
+  "status": "pending|partial|paid|overdue",
+  "dueDate": "date",
+  "issuedDate": "date",
+  "emailSent": "boolean",
+  "emailSentAt": "date"
+}
+```
+
+### Payment Model
+```json
+{
+  "id": "string",
+  "userId": "string",
+  "accountNumber": "string",
+  "amount": "number",
+  "currency": "string",
+  "paymentMethod": "mpesa|paybill|card|bank_transfer|cash",
+  "transactionId": "string",
+  "mpesaReceiptNumber": "string",
+  "phoneNumber": "string",
+  "invoiceId": "string",
+  "status": "pending|completed|failed|cancelled",
+  "paidAt": "date",
+  "createdAt": "date"
+}
+```
+
+### Overpayment Model
+```json
+{
+  "id": "string",
+  "userId": "string",
+  "accountNumber": "string",
+  "paymentId": "string",
+  "amount": "number",
+  "currency": "string",
+  "status": "available|applied|refunded",
+  "appliedToInvoiceId": "string",
+  "appliedAmount": "number",
+  "remainingAmount": "number",
+  "notes": "string"
+}
+```
+
+## Payment Logic Explained
+
+### How Payment Processing Works:
+
+1. **Client Registration**: When registering a client, system generates unique account number (RES123456 for residential, COM123456 for commercial)
+
+2. **Invoice Generation**: Monthly invoices are generated based on service start date and monthly rate
+
+3. **Payment Processing**: 
+   - Payment is applied to oldest unpaid invoice first
+   - If payment exceeds invoice amount, excess is stored as overpayment
+   - Overpayments are automatically applied to future invoices
+
+4. **Account Numbers**: 
+   - Residential clients: RES + 6-digit random number
+   - Commercial clients: COM + 6-digit random number
+
+5. **M-Pesa Integration**: System accepts paybill payments with account number as reference
+
+## Cron Jobs
+
+### Monthly Invoice Generation
+Run monthly to generate invoices for all active clients:
+```bash
+POST /payments/generate-invoices
+```
+
+### Batch Mark Unpicked
+Run daily to mark unpicked garbage:
+```bash
+POST /pickUps/batch-mark-unpicked
+```
 
 ## Environment Variables
 Set up the following environment variables in Postman:

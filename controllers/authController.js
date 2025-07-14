@@ -60,10 +60,17 @@ const register = async (req, res) => {
     }
 
     if (role === 'client') {
-          const { route, pickUpDay, address  } = req.body;
+          const { route, pickUpDay, address, clientType, serviceStartDate, monthlyRate } = req.body;
 
-          if (!route || !pickUpDay || !address ) {
-            return res.status(400).json({ message: 'Route, pick-up day, and address are required for clients.' });
+          if (!route || !pickUpDay || !address || !clientType || !serviceStartDate || !monthlyRate) {
+            return res.status(400).json({ 
+              message: 'Route, pick-up day, address, client type, service start date, and monthly rate are required for clients.' 
+            });
+          }
+
+          // Validate client type
+          if (!['residential', 'commercial'].includes(clientType)) {
+            return res.status(400).json({ message: 'Client type must be either "residential" or "commercial".' });
           }
 
           // Validate route
@@ -72,9 +79,25 @@ const register = async (req, res) => {
             return res.status(400).json({ message: 'Invalid route.' });
           }
 
+          // Validate service start date
+          const startDate = new Date(serviceStartDate);
+          if (isNaN(startDate.getTime())) {
+            return res.status(400).json({ message: 'Invalid service start date.' });
+          }
+
+          // Validate monthly rate
+          const rate = parseFloat(monthlyRate);
+          if (isNaN(rate) || rate <= 0) {
+            return res.status(400).json({ message: 'Monthly rate must be a positive number.' });
+          }
+
           userData.route = validRoute.id;
-          userData.pickUpDay = pickUpDay.toLowerCase(); // Ensure pickUpDay is lowercase
+          userData.pickUpDay = pickUpDay.toLowerCase();
           userData.address = address;
+          userData.clientType = clientType;
+          userData.serviceStartDate = startDate;
+          userData.monthlyRate = rate;
+          userData.organizationId = req.user._id;
     }
 
 
@@ -699,6 +722,17 @@ const manageOrganizationUsers = async (req, res) => {
       
       case 'list':
         return await listUsers(req, res, userType.toLowerCase());
+      case 'get':
+        const user=await User.findOne({
+          _id: userId,
+          role: userType,
+          createdBy: req.user._id
+        }).select('-password','-payment');
+
+        return res.status(200).json({
+          message: `${userType.charAt(0).toUpperCase() + userType.slice(1)} retrieved successfully.`,
+          user: user
+        })
       
       default:
         return res.status(400).json({ 
@@ -865,7 +899,7 @@ const listUsers = async (req, res, userType) => {
     // Build query
     const query = {
       role: userType,
-      organizationId: req.user._id
+      createdBy:req.user._id
     };
 
     // Add search filter
@@ -903,8 +937,10 @@ const listUsers = async (req, res, userType) => {
         phone: user.phone,
         role: user.role,
         isActive: user.isActive,
-        organizationId: user.organizationId,
-        createdAt: user.createdAt
+        createdBy: user.id,
+        createdAt: user.createdAt,
+        organizationId:req.user._id,
+        accountNumber:user.accountNumber
       };
 
       if (userType === 'client') {

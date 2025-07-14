@@ -244,6 +244,21 @@
 									"type": "text"
 								},
 								{
+									"key": "clientType",
+									"value": "residential",
+									"type": "text"
+								},
+								{
+									"key": "serviceStartDate",
+									"value": "2024-01-15",
+									"type": "text"
+								},
+								{
+									"key": "monthlyRate",
+									"value": "2500",
+									"type": "text"
+								},
+								{
 									"key": "documents",
 									"type": "file",
 									"src": []
@@ -955,6 +970,185 @@
 							"raw": "{{base_url}}/pickUps/batch-mark-unpicked",
 							"host": ["{{base_url}}"],
 							"path": ["pickUps", "batch-mark-unpicked"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Payment Management",
+			"item": [
+				{
+					"name": "Process Payment (M-Pesa/Paybill)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"accountNumber\": \"RES123456\",\n  \"amount\": 2500,\n  \"paymentMethod\": \"paybill\",\n  \"mpesaReceiptNumber\": \"QA12B3C4D5\",\n  \"phoneNumber\": \"+254712345678\",\n  \"transactionId\": \"TXN123456789\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/payments/process",
+							"host": ["{{base_url}}"],
+							"path": ["payments", "process"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Monthly Invoices",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/payments/generate-invoices",
+							"host": ["{{base_url}}"],
+							"path": ["payments", "generate-invoices"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Payment History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/payments/history/RES123456?page=1&limit=10",
+							"host": ["{{base_url}}"],
+							"path": ["payments", "history", "RES123456"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Account Statement",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/payments/statement/RES123456?startDate=2024-01-01&endDate=2024-12-31",
+							"host": ["{{base_url}}"],
+							"path": ["payments", "statement", "RES123456"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "M-Pesa Integration",
+			"item": [
+				{
+					"name": "Initiate STK Push",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"254712345678\",\n  \"amount\": 2500,\n  \"accountNumber\": \"RES123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/mpesa/stk-push",
+							"host": ["{{base_url}}"],
+							"path": ["mpesa", "stk-push"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "STK Push Callback (Safaricom)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"Body\": {\n    \"stkCallback\": {\n      \"MerchantRequestID\": \"29115-34620561-1\",\n      \"CheckoutRequestID\": \"ws_CO_191220191020363925\",\n      \"ResultCode\": 0,\n      \"ResultDesc\": \"The service request is processed successfully.\",\n      \"CallbackMetadata\": {\n        \"Item\": [\n          {\n            \"Name\": \"Amount\",\n            \"Value\": 2500\n          },\n          {\n            \"Name\": \"MpesaReceiptNumber\",\n            \"Value\": \"NLJ7RT61SV\"\n          },\n          {\n            \"Name\": \"PhoneNumber\",\n            \"Value\": 254712345678\n          },\n          {\n            \"Name\": \"TransactionDate\",\n            \"Value\": 20191219102115\n          }\n        ]\n      }\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/mpesa/stk-callback",
+							"host": ["{{base_url}}"],
+							"path": ["mpesa", "stk-callback"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "C2B Validation (Safaricom)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"TransactionType\": \"Pay Bill\",\n  \"TransID\": \"NLJ7RT61SV\",\n  \"TransTime\": \"20191122063845\",\n  \"TransAmount\": \"2500\",\n  \"BusinessShortCode\": \"174379\",\n  \"BillRefNumber\": \"RES123456\",\n  \"InvoiceNumber\": \"\",\n  \"OrgAccountBalance\": \"\",\n  \"ThirdPartyTransID\": \"\",\n  \"MSISDN\": \"254712345678\",\n  \"FirstName\": \"John\",\n  \"MiddleName\": \"\",\n  \"LastName\": \"Doe\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/mpesa/c2b-validation",
+							"host": ["{{base_url}}"],
+							"path": ["mpesa", "c2b-validation"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "C2B Confirmation (Safaricom)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"TransactionType\": \"Pay Bill\",\n  \"TransID\": \"NLJ7RT61SV\",\n  \"TransTime\": \"20191122063845\",\n  \"TransAmount\": \"2500\",\n  \"BusinessShortCode\": \"174379\",\n  \"BillRefNumber\": \"RES123456\",\n  \"InvoiceNumber\": \"\",\n  \"OrgAccountBalance\": \"\",\n  \"ThirdPartyTransID\": \"\",\n  \"MSISDN\": \"254712345678\",\n  \"FirstName\": \"John\",\n  \"MiddleName\": \"\",\n  \"LastName\": \"Doe\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/mpesa/c2b-confirmation",
+							"host": ["{{base_url}}"],
+							"path": ["mpesa", "c2b-confirmation"]
 						}
 					},
 					"response": []
