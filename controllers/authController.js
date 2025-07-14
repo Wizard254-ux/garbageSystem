@@ -167,7 +167,7 @@ const manageOrganization = async (req, res) => {
     const { action, organizationId, updateData } = req.body;
 
     // Validation
-    if (!action || !organizationId) {
+    if (!action ) {
       return res.status(400).json({ 
         message: 'Action and organizationId are required.' 
       });
@@ -181,29 +181,55 @@ const manageOrganization = async (req, res) => {
     }
 
     // Find organization
-    const organization = await User.findById(organizationId);
-    if (!organization || organization.role !== 'organization') {
-      return res.status(404).json({ 
-        message: 'Organization not found.' 
-      });
-    }
+    let organization=null
+    if(organizationId){
+
+       organization = await User.findById(organizationId);
+      if (!organization || organization.role !== 'organization') {
+        return res.status(404).json({ 
+          message: 'Organization not found.' 
+        });
+      }
+
+    
 
     if(req.user.id != organization.createdBy()) {
       return res.status(403).json({"mesage": "You are not authorized to manage this organization."})
     }
+  }
 
     switch (action.toLowerCase()) {
       case 'edit':
+        if (!organization) {
+          return res.status(400).json({ 
+            message: 'organizationId is required for edit action.' 
+          });
+        }
         return await editOrganization(req, res, organization, updateData);
       
       case 'delete':
+            if (!organization) {
+          return res.status(400).json({ 
+            message: 'organizationId is required for edit action.' 
+          });
+        }
         return await deleteOrganization(req, res, organization);
       case 'list':
         return await listOrganizations(req, res);
       case 'get':
+            if (!organization) {
+          return res.status(400).json({ 
+            message: 'organizationId is required for edit action.' 
+          });
+        }
         return await getOrganizationDetails(req, res,organization);
       
       case 'stats':
+            if (!organization) {
+          return res.status(400).json({ 
+            message: 'organizationId is required for edit action.' 
+          });
+        }
         return await getOrganizationStats(req, res,organization);
       
       default:
