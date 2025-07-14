@@ -1,0 +1,965 @@
+{
+	"info": {
+		"_postman_id": "garbage-system-api-collection",
+		"name": "Garbage System API",
+		"description": "Complete API collection for the Garbage Management System",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{auth_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000/api",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/logout",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "logout"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "profile"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "User Registration",
+			"item": [
+				{
+					"name": "Register Organization (Admin Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Green Waste Management",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "org@example.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "password123",
+									"type": "text"
+								},
+								{
+									"key": "role",
+									"value": "organization",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "+1234567890",
+									"type": "text"
+								},
+								{
+									"key": "documents",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register/organization",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register", "organization"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register Driver (Organization Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "John Driver",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "driver@example.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "password123",
+									"type": "text"
+								},
+								{
+									"key": "role",
+									"value": "driver",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "+1234567891",
+									"type": "text"
+								},
+								{
+									"key": "documents",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register/driver",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register", "driver"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Register Client (Organization Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Jane Client",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "client@example.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "password123",
+									"type": "text"
+								},
+								{
+									"key": "role",
+									"value": "client",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "+1234567892",
+									"type": "text"
+								},
+								{
+									"key": "route",
+									"value": "route_id_here",
+									"type": "text"
+								},
+								{
+									"key": "pickUpDay",
+									"value": "monday",
+									"type": "text"
+								},
+								{
+									"key": "address",
+									"value": "123 Main St, City",
+									"type": "text"
+								},
+								{
+									"key": "documents",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register/client",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register", "client"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "General Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "multipart/form-data"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Admin User",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "admin@example.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "password123",
+									"type": "text"
+								},
+								{
+									"key": "role",
+									"value": "admin",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "+1234567893",
+									"type": "text"
+								},
+								{
+									"key": "documents",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Organization Management",
+			"item": [
+				{
+					"name": "List Organizations",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"list\",\n  \"page\": 1,\n  \"limit\": 10,\n  \"search\": \"\",\n  \"isActive\": true,\n  \"sortBy\": \"createdAt\",\n  \"sortOrder\": \"desc\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Organization Details",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"get\",\n  \"organizationId\": \"org_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Edit Organization",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"edit\",\n  \"organizationId\": \"org_id_here\",\n  \"updateData\": {\n    \"name\": \"Updated Organization Name\",\n    \"email\": \"updated@example.com\",\n    \"phone\": \"+1234567899\",\n    \"isActive\": true\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Organization",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"delete\",\n  \"organizationId\": \"org_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Organization Statistics",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"stats\",\n  \"organizationId\": \"org_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "manage"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "User Management (Organization)",
+			"item": [
+				{
+					"name": "List Drivers",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"list\",\n  \"userType\": \"driver\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Clients",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"list\",\n  \"userType\": \"client\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Edit Driver",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"edit\",\n  \"userType\": \"driver\",\n  \"userId\": \"driver_id_here\",\n  \"updateData\": {\n    \"name\": \"Updated Driver Name\",\n    \"email\": \"updated.driver@example.com\",\n    \"phone\": \"+1234567894\",\n    \"isActive\": true\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Edit Client",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"edit\",\n  \"userType\": \"client\",\n  \"userId\": \"client_id_here\",\n  \"updateData\": {\n    \"name\": \"Updated Client Name\",\n    \"email\": \"updated.client@example.com\",\n    \"phone\": \"+1234567895\",\n    \"route\": \"new_route_id\",\n    \"pickUpDay\": \"tuesday\",\n    \"address\": \"456 New St, City\",\n    \"isActive\": true\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Driver",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"delete\",\n  \"userType\": \"driver\",\n  \"userId\": \"driver_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Client",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"delete\",\n  \"userType\": \"client\",\n  \"userId\": \"client_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/organization/users/manage",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "organization", "users", "manage"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Password Management",
+			"item": [
+				{
+					"name": "Send Verification Code",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/send-verification-code",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "send-verification-code"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Code",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"verificationCode\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/verify-code",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "verify-code"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"verificationCode\": \"123456\",\n  \"currentPassword\": \"oldpassword123\",\n  \"newPassword\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/change-password",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "change-password"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Route Management",
+			"item": [
+				{
+					"name": "Create Route",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"create\",\n  \"name\": \"Route A\",\n  \"path\": \"Downtown Area\",\n  \"description\": \"Main downtown collection route\",\n  \"isActive\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Routes",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"read\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Route by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"get\",\n  \"id\": \"route_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Route",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"update\",\n  \"id\": \"route_id_here\",\n  \"name\": \"Updated Route A\",\n  \"path\": \"Updated Downtown Area\",\n  \"description\": \"Updated main downtown collection route\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Route",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"delete\",\n  \"id\": \"route_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Activate Route",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"activate\",\n  \"id\": \"route_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Deactivate Route",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"deactivate\",\n  \"id\": \"route_id_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Search Routes",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"action\": \"search\",\n  \"query\": \"downtown\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/routes",
+							"host": ["{{base_url}}"],
+							"path": ["routes"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Pickup Management",
+			"item": [
+				{
+					"name": "Mark Pickup as Completed",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": \"client_id_here\",\n  \"date\": \"2024-01-15\",\n  \"notes\": \"Garbage collected successfully\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/pickUps/mark-picked",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "mark-picked"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Pickup Status - Picked",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/picked",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "picked"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Pickup Status - Unpicked",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/unpicked",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "unpicked"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Pickup Status - Not Yet Marked",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/not_yet_marked",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "not_yet_marked"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Users in Route",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/all",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "all"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Date",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/picked?date=15-01-2024",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "picked"],
+							"query": [
+								{
+									"key": "date",
+									"value": "15-01-2024"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Date Range",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/picked?startDate=15-01-2024&endDate=20-01-2024",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "picked"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "15-01-2024"
+								},
+								{
+									"key": "endDate",
+									"value": "20-01-2024"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Pickup Day",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/route_id_here/all?day=monday",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "route_id_here", "all"],
+							"query": [
+								{
+									"key": "day",
+									"value": "monday"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Batch Mark Unpicked (Cron Job)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/pickUps/batch-mark-unpicked",
+							"host": ["{{base_url}}"],
+							"path": ["pickUps", "batch-mark-unpicked"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
