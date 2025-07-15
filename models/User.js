@@ -33,12 +33,36 @@ const userSchema = new mongoose.Schema({
   pickUpDay:{
     type: String,
     enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-
   },
   route:{
     type: mongoose.Schema.ObjectId,
     ref: 'Route',
-
+  },
+  // Client-specific fields
+  clientType: {
+    type: String,
+    enum: ['residential', 'commercial'],
+    required: function() {
+      return this.role === 'client';
+    }
+  },
+  accountNumber: {
+    type: String,
+    unique: true,
+    sparse: true // Only enforces uniqueness for non-null values
+  },
+  serviceStartDate: {
+    type: Date,
+    required: function() {
+      return this.role === 'client';
+    }
+  },
+  monthlyRate: {
+    type: Number,
+    required: function() {
+      return this.role === 'client';
+    },
+    min: 0
   },
   createdBy:{
     type: mongoose.Schema.ObjectId,
@@ -79,5 +103,20 @@ userSchema.pre('save', async function(next) {
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Generate account number for clients
+userSchema.methods.generateAccountNumber = function() {
+  const prefix = this.clientType === 'commercial' ? 'COM' : 'RES';
+  const randomNum = Math.floor(100000 + Math.random() * 900000); // 6-digit random number
+  return `${prefix}${randomNum}`;
+};
+
+// Pre-save middleware to generate account number for clients
+userSchema.pre('save', function(next) {
+  if (this.role === 'client' && !this.accountNumber) {
+    this.accountNumber = this.generateAccountNumber();
+  }
+  next();
+});
 
 module.exports = mongoose.model('User', userSchema);

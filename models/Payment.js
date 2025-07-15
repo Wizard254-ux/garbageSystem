@@ -8,6 +8,10 @@ const paymentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  accountNumber: {
+    type: String,
+    required: true
+  },
   amount: {
     type: Number,
     required: true,
@@ -15,18 +19,34 @@ const paymentSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
-    default: 'KES', // or 'USD', 'EUR', etc.
+    default: 'KES',
     required: true
   },
   paymentMethod: {
     type: String,
-    enum: ['mpesa', 'card', 'paypal', 'stripe', 'bank_transfer'],
+    enum: ['mpesa', 'paybill', 'card', 'bank_transfer', 'cash'],
     required: true
   },
   transactionId: {
     type: String,
     required: true,
     unique: true
+  },
+  mpesaReceiptNumber: {
+    type: String,
+    required: function() {
+      return this.paymentMethod === 'mpesa' || this.paymentMethod === 'paybill';
+    }
+  },
+  phoneNumber: {
+    type: String,
+    required: function() {
+      return this.paymentMethod === 'mpesa' || this.paymentMethod === 'paybill';
+    }
+  },
+  invoiceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Invoice',
   },
   status: {
     type: String,
@@ -37,11 +57,11 @@ const paymentSchema = new mongoose.Schema({
     type: Date
   },
   metadata: {
-    type: Object, // For storing extra data (e.g., phone number, IP, location)
+    type: Object,
     default: {}
   },
 }, {
-  timestamps: true // adds createdAt and updatedAt automatically
+  timestamps: true
 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

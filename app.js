@@ -9,8 +9,11 @@ const morgan = require('morgan');
 require('dotenv').config();
 
 const { authRoutes } = require('./routes/authRoutes');
-const routeRouter = require('./routes/routes'); // Assuming you have a routes file for route management
-const pickUpRouter = require('./routes/pickUp'); // Assuming you have a routes file for pick-up management
+const routeRouter = require('./routes/routes');
+const pickUpRouter = require('./routes/pickUp');
+const paymentRouter = require('./routes/payment');
+const mpesaRouter = require('./routes/mpesa');
+require('./services/schedule'); // Initialize cron jobs
 const app = express();
 
 
@@ -32,6 +35,8 @@ mongoose.connect(process.env.MONGODB_URI)
 app.use('/api/auth', authRoutes);
 app.use('/api/routes', routeRouter);
 app.use('/api/pickUps', pickUpRouter);
+app.use('/api/payments', paymentRouter);
+app.use('/universal', mpesaRouter);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 

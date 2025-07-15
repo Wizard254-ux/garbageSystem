@@ -169,4 +169,101 @@ const cleanupExpiredCodes = () => {
 setInterval(cleanupExpiredCodes, 60000);
 
 
-module.exports={sendVerificationCode, verifyCode ,verificationCodes};
+// Send invoice email
+const sendInvoiceEmail = async (user, invoice) => {
+  try {
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: `Invoice ${invoice.invoiceNumber} - Garbage Collection Service`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Monthly Invoice</h2>
+          <p>Hello ${user.name},</p>
+          <p>Your monthly garbage collection invoice is ready.</p>
+          
+          <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #495057; margin: 0 0 15px 0;">Invoice Details:</h3>
+            <p><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
+            <p><strong>Account Number:</strong> ${user.accountNumber}</p>
+            <p><strong>Client Type:</strong> ${user.clientType.charAt(0).toUpperCase() + user.clientType.slice(1)}</p>
+            <p><strong>Billing Period:</strong> ${invoice.billingPeriod.start.toLocaleDateString()} - ${invoice.billingPeriod.end.toLocaleDateString()}</p>
+            <p><strong>Due Date:</strong> ${invoice.dueDate.toLocaleDateString()}</p>
+            <p><strong>Amount Due:</strong> KES ${invoice.totalAmount.toLocaleString()}</p>
+          </div>
+          
+          <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h4 style="color: #0c5460; margin: 0 0 10px 0;">Payment Instructions:</h4>
+            <p style="margin: 5px 0;">• Pay via M-Pesa Paybill</p>
+            <p style="margin: 5px 0;">• Use your account number: <strong>${user.accountNumber}</strong></p>
+            <p style="margin: 5px 0;">• Amount: <strong>KES ${invoice.totalAmount.toLocaleString()}</strong></p>
+          </div>
+          
+          <p>Thank you for using our waste management service.</p>
+          <p>Best regards,<br>Your Waste Management Team</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { message: 'Invoice email sent successfully' };
+
+  } catch (error) {
+    console.error('Invoice email error:', error);
+    throw new Error('Failed to send invoice email');
+  }
+};
+
+// Send overpayment notification email
+const sendOverpaymentNotification = async (user, invoice, overpaymentUsed) => {
+  try {
+    const isFullyPaid = invoice.remainingBalance <= 0;
+    
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: `Overpayment Applied - Invoice ${invoice.invoiceNumber}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #28a745;">Overpayment Applied to Your Invoice</h2>
+          <p>Hello ${user.name},</p>
+          <p>We have automatically applied your available overpayment to your latest invoice.</p>
+          
+          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #155724; margin: 0 0 15px 0;">Payment Applied:</h3>
+            <p><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</p>
+            <p><strong>Original Amount:</strong> KES ${invoice.totalAmount.toLocaleString()}</p>
+            <p><strong>Overpayment Used:</strong> KES ${overpaymentUsed.toLocaleString()}</p>
+            <p><strong>Remaining Balance:</strong> KES ${invoice.remainingBalance.toLocaleString()}</p>
+            <p><strong>Status:</strong> ${isFullyPaid ? 'FULLY PAID' : 'PARTIAL PAYMENT'}</p>
+          </div>
+          
+          ${isFullyPaid ? 
+            `<div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h4 style="color: #0c5460; margin: 0 0 10px 0;">✅ Invoice Fully Paid!</h4>
+              <p style="margin: 0;">Your invoice has been completely paid using your overpayment. No further action required.</p>
+            </div>` : 
+            `<div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h4 style="color: #856404; margin: 0 0 10px 0;">⚠️ Remaining Balance</h4>
+              <p style="margin: 5px 0;">You still have a remaining balance of <strong>KES ${invoice.remainingBalance.toLocaleString()}</strong></p>
+              <p style="margin: 5px 0;">Please pay via M-Pesa Paybill using your account number: <strong>${user.accountNumber}</strong></p>
+              <p style="margin: 5px 0;">Due Date: <strong>${invoice.dueDate.toLocaleDateString()}</strong></p>
+            </div>`
+          }
+          
+          <p>Thank you for using our waste management service.</p>
+          <p>Best regards,<br>Your Waste Management Team</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { message: 'Overpayment notification sent successfully' };
+
+  } catch (error) {
+    console.error('Overpayment notification email error:', error);
+    throw new Error('Failed to send overpayment notification email');
+  }
+};
+
+module.exports={sendVerificationCode, verifyCode, sendInvoiceEmail, sendOverpaymentNotification, verificationCodes};

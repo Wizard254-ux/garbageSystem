@@ -55,6 +55,76 @@ router.post('/organization/users/manage',
   authorizeRoles('organization'), 
   manageOrganizationUsers
 );
+
+// Get clients list
+router.get('/clients', 
+  authenticateToken, 
+  authorizeRoles('organization'), 
+  (req, res, next) => {
+    req.body = { action: 'list', userType: 'client' };
+    next();
+  },
+  manageOrganizationUsers
+);
+
+// Get drivers list
+router.get('/drivers', 
+  authenticateToken, 
+  authorizeRoles('organization'), 
+  (req, res, next) => {
+    req.body = { action: 'list', userType: 'driver' };
+    next();
+  },
+  manageOrganizationUsers
+);
+
+// Get specific client
+router.get('/client/:userId', 
+  authenticateToken, 
+  authorizeRoles('organization'), 
+  async (req, res) => {
+    try {
+      const User = require('../models/User');
+      const client = await User.findOne({
+        _id: req.params.userId,
+        role: 'client',
+        organizationId: req.user._id
+      }).select('-password');
+      
+      if (!client) {
+        return res.status(404).json({ success: false, error: 'Client not found' });
+      }
+      
+      res.json({ success: true, data: client });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+);
+
+// Get specific driver
+router.get('/driver/:userId', 
+  authenticateToken, 
+  authorizeRoles('organization'), 
+  async (req, res) => {
+    try {
+      const User = require('../models/User');
+      const driver = await User.findOne({
+        _id: req.params.userId,
+        role: 'driver',
+        organizationId: req.user._id
+      }).select('-password');
+      
+      if (!driver) {
+        return res.status(404).json({ success: false, error: 'Driver not found' });
+      }
+      
+      res.json({ success: true, data: driver });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+);
 router.post('/send-verification-code', 
   authenticateToken, 
   async(req, res, next) => {
