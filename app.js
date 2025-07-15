@@ -17,10 +17,11 @@ const app = express();
 app.use(helmet());
 app.use(morgan('dev'));
 
-// Middleware
-app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:3173' }));
-app.use(express.json());
 app.use(cookieParser());
+// Middleware
+app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+app.use(express.json());
+
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
