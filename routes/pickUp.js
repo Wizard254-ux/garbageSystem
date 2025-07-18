@@ -6,12 +6,19 @@ const router = express.Router();
 
 router.post('/mark-picked',
   authenticateToken,
-    authorizeRoles('organization', 'driver'),
+    authorizeRoles(['organization', 'driver']),
     markPicked
 )
+
 router.get('/:routeId/:pickStatus',
   authenticateToken,
-    authorizeRoles('organization', 'driver'),
+    authorizeRoles(['organization', 'driver']),
+    getUsersByPickupStatus
+)
+
+router.get('/:pickStatus',
+  authenticateToken,
+    authorizeRoles(['organization', 'driver']),
     getUsersByPickupStatus
 )
 

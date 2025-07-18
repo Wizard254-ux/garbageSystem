@@ -2,6 +2,8 @@ const User = require('../models/User');
 const Route = require('../models/Route');
 const jwt = require('jsonwebtoken');
 const {verificationCodes} = require('../services/mail');
+const mongoose = require('mongoose');
+const ObjectId = mongoose.Types.ObjectId;
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -188,6 +190,7 @@ const getProfile = async (req, res) => {
 const manageOrganization = async (req, res) => {
   try {
     const { action, organizationId, updateData } = req.body;
+    console.log(action, organizationId, updateData)
 
     // Validation
     if (!action ) {
@@ -216,8 +219,8 @@ const manageOrganization = async (req, res) => {
 
     
 
-    if(req.user.id != organization.createdBy()) {
-      return res.status(403).json({"mesage": "You are not authorized to manage this organization."})
+    if(req.user._id.toString() !== organization.createdBy.toString()) {
+      return res.status(403).json({"message": "You are not authorized to manage this organization."})
     }
   }
 
@@ -242,7 +245,7 @@ const manageOrganization = async (req, res) => {
       case 'get':
             if (!organization) {
           return res.status(400).json({ 
-            message: 'organizationId is required for edit action.' 
+            message: 'organizationId is required for get action.' 
           });
         }
         return await getOrganizationDetails(req, res,organization);
@@ -250,14 +253,14 @@ const manageOrganization = async (req, res) => {
       case 'stats':
             if (!organization) {
           return res.status(400).json({ 
-            message: 'organizationId is required for edit action.' 
+            message: 'organizationId is required for stats action.' 
           });
         }
         return await getOrganizationStats(req, res,organization);
       
       default:
         return res.status(400).json({ 
-          message: 'Invalid action. Supported actions: edit, delete' 
+          message: 'Invalid action. Supported actions: edit, delete, list, get, stats' 
         });
     }
 
@@ -295,9 +298,9 @@ const listOrganizations = async (req, res) => {
     }
 
     // Add isActive filter
-    if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
-    }
+    // if (isActive !== undefined) {
+    //   query.isActive = isActive === 'true';
+    // }
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -306,15 +309,17 @@ const listOrganizations = async (req, res) => {
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    // Get organizations with pagination
+    // Get organizations with pagination - USE THE BUILT QUERY
+    console.log('query ',query)
     const organizations = await User.find(query)
       .select('-password')
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Get total count
+    // Get total count - USE THE BUILT QUERY
     const totalOrganizations = await User.countDocuments(query);
+    console.log(totalOrganizations)
 
     // Get detailed information for each organization
     const organizationsWithDetails = await Promise.all(
@@ -509,7 +514,7 @@ const getOrganizationDetails = async (req, res,organization) => {
   }
 };
 
-const getOrganizationStats = async (req, res) => {
+const getOrganizationStats = async (req, res, organization) => {
   try {
     // Check if user is admin
     if (!req.user || req.user.role !== 'admin') {
@@ -692,6 +697,7 @@ const manageOrganizationUsers = async (req, res) => {
     }
 
     // Check if user is organization
+    console.log('managing users')
     if (!req.user || req.user.role !== 'organization') {
       return res.status(403).json({ 
         message: 'Only organizations can manage users.' 
@@ -895,6 +901,7 @@ const deleteUser = async (req, res, userType, userId) => {
 const listUsers = async (req, res, userType) => {
   try {
     const { page = 1, limit = 10, search = '', isActive } = req.query;
+       console.log(userType,req.user._id)
 
     // Build query
     const query = {
@@ -903,13 +910,13 @@ const listUsers = async (req, res, userType) => {
     };
 
     // Add search filter
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
-      ];
-    }
+    // if (search) {
+    //   query.$or = [
+    //     { name: { $regex: search, $options: 'i' } },
+    //     { email: { $regex: search, $options: 'i' } },
+    //     { phone: { $regex: search, $options: 'i' } }
+    //   ];
+    // }
 
     // Add isActive filter
     if (isActive !== undefined) {
@@ -937,7 +944,7 @@ const listUsers = async (req, res, userType) => {
         phone: user.phone,
         role: user.role,
         isActive: user.isActive,
-        createdBy: user.id,
+        createdBy: user.createdBy,
         createdAt: user.createdAt,
         organizationId:req.user._id,
         accountNumber:user.accountNumber
@@ -1054,4 +1061,17 @@ const changePassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, logout, getProfile,manageOrganization ,manageOrganizationUsers ,changePassword};
+module.exports = { 
+  register, 
+  login, 
+  logout, 
+  getProfile, 
+  manageOrganization, 
+  manageOrganizationUsers, 
+  changePassword, 
+  listOrganizations, 
+  getOrganizationDetails, 
+  getOrganizationStats, 
+  editOrganization, 
+  deleteOrganization 
+};

@@ -8,7 +8,7 @@ const morgan = require('morgan');
 
 require('dotenv').config();
 
-const { authRoutes } = require('./routes/authRoutes');
+const authRoutes= require('./routes/authRoutes');
 const routeRouter = require('./routes/routes');
 const pickUpRouter = require('./routes/pickUp');
 const paymentRouter = require('./routes/payment');
@@ -21,7 +21,7 @@ app.use(helmet());
 app.use(morgan('dev'));
 
 // Middleware
-app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:3173' }));
+app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:5174' }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -40,12 +40,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!' });
-});
+// app.use((err, req, res, next) => {
+//   console.error(err.stack);
+//   res.status(500).json({ message: 'Something went wrong!' });
+// });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0',() => {
   console.log(`Server running on port ${PORT}`);
 });

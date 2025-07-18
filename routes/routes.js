@@ -6,9 +6,9 @@ const router = express.Router();
 
 router.post('/',
   authenticateToken,
-  authorizeRoles('organization'),
+  authorizeRoles(["organization", "driver", "admin"]),
   (req,res,next)=>{
-    console.log('hhhggbb',req.body)
+    console.log('Routes request:', req.body)
     next()
   },
   manageRoutes
