@@ -209,17 +209,16 @@ const manageOrganization = async (req, res) => {
     if(organizationId){
 
        organization = await User.findById(organizationId);
+       console.log("Organization:", organization);
       if (!organization || organization.role !== 'organization') {
         return res.status(404).json({ 
           message: 'Organization not found.' 
         });
       }
 
-    
-
-    if(req.user.id != organization.createdBy()) {
-      return res.status(403).json({"mesage": "You are not authorized to manage this organization."})
-    }
+    // if(req.user.id != organization.createdBy) {
+    //   return res.status(403).json({"mesage": "You are not authorized to manage this organization."})
+    // }
   }
 
     switch (action.toLowerCase()) {
@@ -297,7 +296,7 @@ const listOrganizations = async (req, res) => {
 
     // Add isActive filter
     if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
+      query.isActive = isActive === 'true' || isActive === true;
     }
 
     // Calculate pagination
@@ -313,7 +312,7 @@ const listOrganizations = async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit));
-
+    // console.log("Organizations", organizations);
     // Get total count
     const totalOrganizations = await User.countDocuments(query);
 

@@ -390,10 +390,14 @@ const getUsersByPickupStatus = async (req, res) => {
       }
 
       let userQuery = { 
-        route: routeId, 
         role: "client", 
         isActive: true 
       };
+
+      // Only add route filter if routeId is not "all"
+      if (routeId !== 'all') {
+        userQuery.route = routeId;
+      }
 
       // Add day filter if provided
       if (day) {
