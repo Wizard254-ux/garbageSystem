@@ -268,6 +268,42 @@ const getPaymentHistory = async (req, res) => {
     });
   }
 };
+// Get payment history
+const getFullPaymentHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+
+
+    const payments = await Payment.find()
+      .populate('invoiceId')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const totalPayments = await Payment.countDocuments({ userId: user._id });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        payments,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalPayments / limit),
+          totalPayments,
+          hasNext: page * limit < totalPayments,
+          hasPrev: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Payment history error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment history'
+    });
+  }
+};
 
 // Get account statement
 const getAccountStatement = async (req, res) => {
@@ -586,5 +622,6 @@ module.exports = {
   getAccountStatement,
   createManualInvoice,
   getClientPaymentInfo,
-  getOrganizationStats
+  getOrganizationStats,
+  getFullPaymentHistory
 };
