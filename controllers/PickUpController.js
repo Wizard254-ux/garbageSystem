@@ -283,10 +283,6 @@ async function batchMarkUnpicked() {
   }
 }
 
-
-
-
-
 const getUsersByPickupStatus = async (req, res) => {
   const { routeId, pickStatus } = req.params;
   const { 
@@ -415,10 +411,14 @@ const getUsersByPickupStatus = async (req, res) => {
 
     // For other statuses, use a simpler approach with multiple queries
     let baseQuery = {
-      route: new mongoose.Types.ObjectId(routeId),
       role: "client",
       isActive: true
     };
+
+    // Only add route filter if routeId is not "all"
+    if (routeId !== 'all') {
+      baseQuery.route = new mongoose.Types.ObjectId(routeId);
+    }
 
     // Add day filter if provided
     if (day) {
@@ -543,7 +543,6 @@ const getUsersByPickupStatus = async (req, res) => {
     });
   }
 };
-
 
 
 module.exports = {markPicked,batchMarkUnpicked,pickUpHistory,pickUpStatus,getUsersByPickupStatus};

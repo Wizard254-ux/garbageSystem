@@ -18,13 +18,13 @@ router.get('/profile', authenticateToken, getProfile);
 // Admin can create organizations
 router.post('/register/organization', 
   authenticateToken, 
-  authorizeRoles('admin'), 
+  authorizeRoles(['admin']),
   uploadMultiple('documents', 5),
   register
 );
 router.post('/register/client', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']),
   uploadMultiple('documents', 5),
   register
 );
@@ -32,7 +32,7 @@ router.post('/register/client',
 // Organizations can create drivers
 router.post('/register/driver', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']),
   uploadMultiple('documents', 5),
   register
 );
@@ -46,20 +46,20 @@ router.post('/register',
 
 router.post('/organization/manage', 
   authenticateToken, 
-  authorizeRoles('admin'), 
+  authorizeRoles(['admin']), 
   manageOrganization
 );
 
 router.post('/organization/users/manage', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']), 
   manageOrganizationUsers
 );
 
 // Get clients list
 router.get('/clients', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']),
   (req, res, next) => {
     req.body = { action: 'list', userType: 'client' };
     next();
@@ -70,7 +70,7 @@ router.get('/clients',
 // Get drivers list
 router.get('/drivers', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']), 
   (req, res, next) => {
     req.body = { action: 'list', userType: 'driver' };
     next();
@@ -81,7 +81,7 @@ router.get('/drivers',
 // Get specific client
 router.get('/client/:userId', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']),
   async (req, res) => {
     try {
       const User = require('../models/User');
@@ -105,7 +105,7 @@ router.get('/client/:userId',
 // Get specific driver
 router.get('/driver/:userId', 
   authenticateToken, 
-  authorizeRoles('organization'), 
+  authorizeRoles(['organization']),
   async (req, res) => {
     try {
       const User = require('../models/User');
@@ -163,7 +163,7 @@ router.post('/verify-code',authenticateToken,   async(req, res, next) => {
 router.post('/change-password', authenticateToken,changePassword);
 router.post('/routes',
   authenticateToken,
-  authorizeRoles('organization'),
+  authorizeRoles(['organization']),
   (req,res,next)=>{
     console.log('hhhggbb',req.body)
     next()
@@ -171,4 +171,4 @@ router.post('/routes',
   manageRoutes
 )
 
-module.exports = { authRoutes: router };
+module.exports = router;
