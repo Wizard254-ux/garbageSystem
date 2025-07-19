@@ -919,9 +919,9 @@ const listUsers = async (req, res, userType) => {
     // }
 
     // Add isActive filter
-    if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
-    }
+    // if (isActive !== undefined) {
+    //   query.isActive = isActive === 'true';
+    // }
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
