@@ -10,12 +10,13 @@ const generateToken = (id) => {
 };
 
 const setCookieToken = (res, token) => {
-  res.cookie('token', token, {
+  res.cookie("token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
+    console.log("Cookie set with token:", token.substring(0, 20) + "...");
 };
 
 const register = async (req, res) => {
@@ -211,6 +212,7 @@ const manageOrganization = async (req, res) => {
     if(organizationId){
 
        organization = await User.findById(organizationId);
+       console.log("Organization:", organization);
       if (!organization || organization.role !== 'organization') {
         return res.status(404).json({ 
           message: 'Organization not found.' 

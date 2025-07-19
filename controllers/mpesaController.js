@@ -127,9 +127,10 @@ const c2bConfirmation = async (req, res) => {
     await processSuccessfulPayment({
       amount: TransAmount,
       mpesaReceiptNumber: TransID,
+      phoneNumber: MSISDN,
       accountNumber: BillRefNumber,
       transactionDate: TransTime,
-      payerName: `${FirstName} ${LastName}`
+      payerName: `${FirstName} ${LastName}`,
     });
 
     res.status(200).json({
@@ -156,7 +157,7 @@ const processSuccessfulPayment = async (paymentData) => {
       accountNumber,
       transactionDate,
       checkoutRequestID,
-      payerName
+      payerName,
     } = paymentData;
 
     // Find user by account number

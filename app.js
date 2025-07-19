@@ -21,10 +21,11 @@ const app = express();
 app.use(helmet());
 app.use(morgan('dev'));
 
-// Middleware
-app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:5174' }));
-app.use(express.json());
 app.use(cookieParser());
+// Middleware
+app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+app.use(express.json());
+
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -37,7 +38,14 @@ app.use('/api/routes', routeRouter);
 app.use('/api/pickUps', pickUpRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/api/invoices', invoiceRouter);
-app.use('/universal', mpesaRouter);
+app.use(
+  "/universal",
+  (req, res, next) => {
+    console.log("Mpesa route accessed");
+    next();
+  },
+  mpesaRouter
+);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
