@@ -280,7 +280,7 @@ const getFullPaymentHistory = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    const totalPayments = await Payment.countDocuments({ userId: user._id });
+    const totalPayments = await Payment.countDocuments({ userId: User._id });
 
     res.status(200).json({
       success: true,

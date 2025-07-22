@@ -86,10 +86,12 @@ const uploadSingle = (fieldname) => {
   };
 };
 
-const uploadMultiple = (fieldname, maxCount = 5) => {
+const uploadMultiple = (fieldname, maxCount = 10) => {
   return (req, res, next) => {
+    console.log(`Attempting to upload ${fieldname} files, max count: ${maxCount}`);
     upload.array(fieldname, maxCount)(req, res, (err) => {
       if (err) {
+        console.error('File upload error:', err);
         return res.status(400).json({
           success: false,
           message: 'File upload error',
@@ -101,6 +103,11 @@ const uploadMultiple = (fieldname, maxCount = 5) => {
       if (req.files && req.files.length > 0) {
         req.filePaths = req.files.map(file => file.path);
         req.fileUrls = req.files.map(file => `/${file.path}`);
+        console.log(`${req.files.length} files uploaded:`, req.filePaths);
+      } else {
+        req.filePaths = [];
+        req.fileUrls = [];
+        console.log('No files uploaded');
       }
       
       next();

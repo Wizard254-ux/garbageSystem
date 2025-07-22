@@ -1,6 +1,6 @@
 // routes/authRoutes.js
 const express = require('express');
-const { register, login, logout, getProfile,manageOrganization,manageOrganizationUsers  ,changePassword} = require('../controllers/authController');
+const { register, login, logout, getProfile, manageOrganization, manageOrganizationUsers, changePassword, sendDriverCredentials } = require('../controllers/authController');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const { uploadSingle, uploadMultiple, uploadMixedMiddleware } = require('../middleware/multer');
 const { sendVerificationCode,verifyCode } = require('../services/mail');
@@ -33,7 +33,7 @@ router.post('/register/client',
 router.post('/register/driver', 
   authenticateToken, 
   authorizeRoles(['organization']),
-  uploadMultiple('documents', 5),
+  uploadMultiple('documents', 10),
   register
 );
 
@@ -119,8 +119,17 @@ router.get('/driver/:userId',
         return res.status(404).json({ success: false, error: 'Driver not found' });
       }
       
-      res.json({ success: true, data: driver });
+      // Include full document paths
+      const driverData = driver.toObject();
+      if (driverData.documents && driverData.documents.length > 0) {
+        driverData.documents = driverData.documents.map(doc => 
+          doc.startsWith('http') ? doc : `${req.protocol}://${req.get('host')}/${doc}`
+        );
+      }
+      
+      res.json({ success: true, user: driverData });
     } catch (error) {
+      console.error('Error fetching driver details:', error);
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
@@ -160,7 +169,15 @@ router.post('/verify-code',authenticateToken,   async(req, res, next) => {
   });
 
 // POST /api/auth/change-password - Change password with verification
-router.post('/change-password', authenticateToken,changePassword);
+router.post('/change-password', authenticateToken, changePassword);
+
+// Send driver credentials
+router.post('/send-driver-credentials', 
+  authenticateToken, 
+  authorizeRoles(['organization']), 
+  sendDriverCredentials
+);
+
 router.post('/routes',
   authenticateToken,
   authorizeRoles(['organization']),

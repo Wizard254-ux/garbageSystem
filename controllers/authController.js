@@ -21,13 +21,17 @@ const setCookieToken = (res, token) => {
 
 const register = async (req, res) => {
   try {
-    const { name, email, password, role,phone } = req.body;
-
-   
-
-    // Validation
-    if (!name || !email || !password || !role || !phone) {
-      return res.status(400).json({ message: 'All fields are required.' });
+    const { name, email, password, role, phone } = req.body;
+    
+    // Validation for basic fields
+    if (!name || !email || !role || !phone) {
+      return res.status(400).json({ message: 'Name, email, role, and phone are required.' });
+    }
+    
+    // For drivers, password is not required during registration
+    // For other roles, password is still required
+    if (role !== 'driver' && !password) {
+      return res.status(400).json({ message: 'Password is required.' });
     }
 
     // Check if user already exists
@@ -57,9 +61,40 @@ const register = async (req, res) => {
     }
 
     // Create user
-    const userData = { name, email, password, role ,documents: req.filePaths || [],phone,createdBy: req.user ? req.user._id : null };
+    const userData = { 
+      name, 
+      email, 
+      role,
+      documents: req.filePaths || [],
+      phone,
+      createdBy: req.user ? req.user._id : null 
+    };
+    
+    console.log('Creating user with data:', { 
+      name, 
+      email, 
+      role, 
+      phone, 
+      documents: req.filePaths || [],
+      hasFiles: !!req.files,
+      filesCount: req.files ? req.files.length : 0,
+      filePaths: req.filePaths || 'none',
+      fileUrls: req.fileUrls || 'none'
+    });
+    
+    // Only add password for non-driver roles
+    if (role !== 'driver' || password) {
+      userData.password = password;
+    } else if (role === 'driver') {
+      // For drivers, set a placeholder password that will be updated when credentials are sent
+      // This is needed because the password field is required in the User model
+      userData.password = 'placeholder_' + Date.now();
+    }
+    
     if (role === 'driver') {
       userData.organizationId = req.user._id;
+      userData.isActive = true; // Set driver status to active by default
+      userData.isSent = false; // Track if credentials have been sent
     }
 
     if (role === 'client') {
@@ -946,6 +981,7 @@ const listUsers = async (req, res, userType) => {
         phone: user.phone,
         role: user.role,
         isActive: user.isActive,
+        isSent: user.isSent,
         createdBy: user.createdBy,
         createdAt: user.createdAt,
         organizationId:req.user._id,
@@ -1063,6 +1099,54 @@ const changePassword = async (req, res) => {
   }
 };
 
+// Send driver credentials
+const sendDriverCredentials = async (req, res) => {
+  try {
+    const { driverId } = req.body;
+    
+    if (!driverId) {
+      return res.status(400).json({ message: 'Driver ID is required.' });
+    }
+
+    // Check if user is organization
+    if (!req.user || req.user.role !== 'organization') {
+      return res.status(403).json({ message: 'Only organizations can send driver credentials.' });
+    }
+
+    // Find driver
+    const driver = await User.findOne({
+      _id: driverId,
+      role: 'driver',
+      organizationId: req.user._id
+    });
+
+    if (!driver) {
+      return res.status(404).json({ message: 'Driver not found or doesn\'t belong to your organization.' });
+    }
+
+    // Always generate a new random password when sending/resending credentials
+    const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-2).toUpperCase();
+    
+    // Update driver's password
+    driver.password = randomPassword;
+    driver.isSent = true;
+    await driver.save();
+
+    // Send email with credentials
+    const { sendDriverCredentials } = require('../services/mail');
+    await sendDriverCredentials(driver, randomPassword);
+
+    res.json({
+      message: 'Driver credentials sent successfully.',
+      driverId: driver._id,
+      email: driver.email
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Server error.', error: error.message });
+  }
+};
+
 module.exports = { 
   register, 
   login, 
@@ -1075,5 +1159,6 @@ module.exports = {
   getOrganizationDetails, 
   getOrganizationStats, 
   editOrganization, 
-  deleteOrganization 
+  deleteOrganization,
+  sendDriverCredentials
 };

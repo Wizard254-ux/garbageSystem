@@ -266,4 +266,56 @@ const sendOverpaymentNotification = async (user, invoice, overpaymentUsed) => {
   }
 };
 
-module.exports={sendVerificationCode, verifyCode, sendInvoiceEmail, sendOverpaymentNotification, verificationCodes};
+// Send driver credentials email
+const sendDriverCredentials = async (driver, password) => {
+  try {
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: driver.email,
+      subject: 'Your Driver Account Credentials',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #28a745;">Welcome to Our Waste Management Team!</h2>
+          <p>Hello ${driver.name},</p>
+          <p>Your driver account has been created successfully. Below are your login credentials:</p>
+          
+          <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #495057; margin: 0 0 15px 0;">Account Details:</h3>
+            <p><strong>Email:</strong> ${driver.email}</p>
+            <p><strong>Password:</strong> ${password}</p>
+          </div>
+          
+          <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h4 style="color: #0c5460; margin: 0 0 10px 0;">Download the Driver App:</h4>
+            <p style="margin: 5px 0;">To start using our service, please download our Driver App:</p>
+            <p style="margin: 10px 0;">
+              <a href="#" style="display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Download Driver App</a>
+            </p>
+            <p style="margin: 5px 0;">Alternatively, you can visit our website and click on "Driver App" to install it.</p>
+          </div>
+          
+          <p>Please login to the app using the email and password provided above.</p>
+          <p>For security reasons, we recommend changing your password after your first login.</p>
+          <p>If you have any questions or need assistance, please contact your supervisor.</p>
+          <p>Best regards,<br>Your Waste Management Team</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { message: 'Driver credentials sent successfully' };
+
+  } catch (error) {
+    console.error('Driver credentials email error:', error);
+    throw new Error('Failed to send driver credentials email');
+  }
+};
+
+module.exports={
+  sendVerificationCode, 
+  verifyCode, 
+  sendInvoiceEmail, 
+  sendOverpaymentNotification, 
+  sendDriverCredentials,
+  verificationCodes
+};
