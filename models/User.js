@@ -46,6 +46,14 @@ const userSchema = new mongoose.Schema({
       return this.role === 'client';
     }
   },
+  numberOfUnits: {
+    type: Number,
+    default: 1,
+    min: 1,
+    required: function() {
+      return this.role === 'client' && this.clientType === 'commercial';
+    }
+  },
   accountNumber: {
     type: String,
     unique: true,

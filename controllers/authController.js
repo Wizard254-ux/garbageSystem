@@ -28,9 +28,9 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Name, email, role, and phone are required.' });
     }
     
-    // For drivers, password is not required during registration
+    // For drivers and clients, password is not required during registration
     // For other roles, password is still required
-    if (role !== 'driver' && !password) {
+    if (role !== 'driver' && role !== 'client' && !password) {
       return res.status(400).json({ message: 'Password is required.' });
     }
 
@@ -82,13 +82,14 @@ const register = async (req, res) => {
       fileUrls: req.fileUrls || 'none'
     });
     
-    // Only add password for non-driver roles
-    if (role !== 'driver' || password) {
-      userData.password = password;
-    } else if (role === 'driver') {
-      // For drivers, set a placeholder password that will be updated when credentials are sent
+    // Handle password for different roles
+    if (role === 'driver' || role === 'client') {
+      // For drivers and clients, set a placeholder password
       // This is needed because the password field is required in the User model
       userData.password = 'placeholder_' + Date.now();
+    } else if (password) {
+      // For other roles (admin, organization), use the provided password
+      userData.password = password;
     }
     
     if (role === 'driver') {
@@ -98,7 +99,7 @@ const register = async (req, res) => {
     }
 
     if (role === 'client') {
-          const { route, pickUpDay, address, clientType, serviceStartDate, monthlyRate } = req.body;
+          const { route, pickUpDay, address, clientType, serviceStartDate, monthlyRate, numberOfUnits } = req.body;
 
           if (!route || !pickUpDay || !address || !clientType || !serviceStartDate || !monthlyRate) {
             return res.status(400).json({ 
@@ -128,13 +129,27 @@ const register = async (req, res) => {
           if (isNaN(rate) || rate <= 0) {
             return res.status(400).json({ message: 'Monthly rate must be a positive number.' });
           }
+          
+          // Validate number of units for commercial clients
+          if (clientType === 'commercial') {
+            const units = parseInt(numberOfUnits);
+            if (!numberOfUnits || isNaN(units) || units < 1) {
+              return res.status(400).json({ message: 'Number of units must be a positive number for commercial clients.' });
+            }
+            userData.numberOfUnits = units;
+            // For commercial clients, monthly rate is per unit
+            userData.monthlyRate = rate * units;
+          } else {
+            // For residential clients, just use the monthly rate as is
+            userData.monthlyRate = rate;
+            userData.numberOfUnits = 1; // Default to 1 unit for residential
+          }
 
           userData.route = validRoute.id;
           userData.pickUpDay = pickUpDay.toLowerCase();
           userData.address = address;
           userData.clientType = clientType;
           userData.serviceStartDate = startDate;
-          userData.monthlyRate = rate;
           userData.organizationId = req.user._id;
     }
 
@@ -725,6 +740,7 @@ const deleteOrganization = async (req, res, organization) => {
 const manageOrganizationUsers = async (req, res) => {
   try {
     const { action, userType, userId, updateData } = req.body;
+    console.log(req.body)
 
     // Validation
     if (!action || !userType) {
@@ -747,6 +763,7 @@ const manageOrganizationUsers = async (req, res) => {
         message: 'Invalid userType. Must be either "client" or "driver".' 
       });
     }
+
 
     switch (action.toLowerCase()) {
       
@@ -816,7 +833,7 @@ const editUser = async (req, res, userType, userId, updateData) => {
 
     // Define allowed fields for update based on user type
     const commonFields = ['name', 'email', 'phone', 'isActive'];
-    const clientFields = ['route', 'pickUpDay', 'address'];
+    const clientFields = ['route', 'pickUpDay', 'address', 'clientType', 'monthlyRate', 'numberOfUnits'];
     const allowedFields = userType === 'client' 
       ? [...commonFields, ...clientFields] 
       : commonFields;
@@ -833,6 +850,42 @@ const editUser = async (req, res, userType, userId, updateData) => {
         }
       }
     }
+    
+    // Handle special case for commercial clients with numberOfUnits
+    if (userType === 'client' && 
+        (updateData.numberOfUnits !== undefined || updateData.clientType !== undefined || updateData.monthlyRate !== undefined)) {
+      
+      // Get current values if not provided in update
+      const clientType = updateData.clientType || user.clientType;
+      let baseRate = updateData.monthlyRate !== undefined ? parseFloat(updateData.monthlyRate) : user.monthlyRate;
+      let units = updateData.numberOfUnits !== undefined ? parseInt(updateData.numberOfUnits) : user.numberOfUnits || 1;
+      
+      // Validate units for commercial clients
+      if (clientType === 'commercial' && (isNaN(units) || units < 1)) {
+        return res.status(400).json({ message: 'Number of units must be a positive number for commercial clients.' });
+      }
+      
+      // For commercial clients, recalculate the monthly rate based on units
+      if (clientType === 'commercial') {
+        // If the client was previously residential or the base rate changed
+        if (user.clientType !== 'commercial' || updateData.monthlyRate !== undefined) {
+          // Store the base rate per unit
+          filteredUpdateData.monthlyRate = baseRate * units;
+        } else if (updateData.numberOfUnits !== undefined) {
+          // Only units changed, recalculate based on existing rate
+          const ratePerUnit = user.monthlyRate / user.numberOfUnits;
+          filteredUpdateData.monthlyRate = ratePerUnit * units;
+        }
+        
+        filteredUpdateData.numberOfUnits = units;
+      } else if (clientType === 'residential') {
+        // For residential clients, just use the base rate
+        if (updateData.monthlyRate !== undefined) {
+          filteredUpdateData.monthlyRate = baseRate;
+        }
+        filteredUpdateData.numberOfUnits = 1;
+      }
+    }
 
     if (Object.keys(filteredUpdateData).length === 0) {
       return res.status(400).json({ 
@@ -847,18 +900,22 @@ const editUser = async (req, res, userType, userId, updateData) => {
         $or: []
       };
 
-      if (filteredUpdateData.email) {
+      // Only check for duplicates if the value is actually changing
+      if (filteredUpdateData.email && filteredUpdateData.email !== user.email) {
         duplicateQuery.$or.push({ email: filteredUpdateData.email });
       }
-      if (filteredUpdateData.phone) {
+      if (filteredUpdateData.phone && filteredUpdateData.phone !== user.phone) {
         duplicateQuery.$or.push({ phone: filteredUpdateData.phone });
       }
 
-      const existingUser = await User.findOne(duplicateQuery);
-      if (existingUser) {
-        return res.status(400).json({ 
-          message: 'Email or phone already exists.' 
-        });
+      // Only run the query if we're actually checking for duplicates
+      if (duplicateQuery.$or && duplicateQuery.$or.length > 0) {
+        const existingUser = await User.findOne(duplicateQuery);
+        if (existingUser) {
+          return res.status(400).json({ 
+            message: 'Email or phone already exists.' 
+          });
+        }
       }
     }
 
@@ -883,6 +940,9 @@ const editUser = async (req, res, userType, userId, updateData) => {
       responseUser.route = updatedUser.route;
       responseUser.pickUpDay = updatedUser.pickUpDay;
       responseUser.address = updatedUser.address;
+      responseUser.clientType = updatedUser.clientType;
+      responseUser.monthlyRate = updatedUser.monthlyRate;
+      responseUser.numberOfUnits = updatedUser.numberOfUnits || 1;
     }
 
     res.json({
@@ -993,6 +1053,10 @@ const listUsers = async (req, res, userType) => {
         userObj.route = user.route;
         userObj.pickUpDay = user.pickUpDay;
         userObj.address = user.address;
+        userObj.clientType = user.clientType;
+        userObj.monthlyRate = user.monthlyRate;
+        userObj.numberOfUnits = user.numberOfUnits || 1;
+        userObj.serviceStartDate = user.serviceStartDate;
       }
 
       return userObj;
