@@ -23,7 +23,7 @@ const generateVerificationCode = () => {
 };
 
 // Send verification code to email
-const sendVerificationCode = async (user, pickUpNotification = false) => {
+const sendVerificationCode = async (user, pickUpNotification = false, customCode = null) => {
   try {
     const email = user.email;
 
@@ -82,36 +82,60 @@ const sendVerificationCode = async (user, pickUpNotification = false) => {
     }
 
     // Original verification code logic
-    // Generate verification code
-    const verificationCode = generateVerificationCode();
+    // Generate verification code or use custom code if provided
+    const verificationCode = customCode || generateVerificationCode();
     
     // Store code with expiration (5 minutes)
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
     verificationCodes.set(email, {
       code: verificationCode,
       expiresAt,
-      userId: user._id.toString()
+      userId: user._id ? user._id.toString() : null
     });
 
     // Send email
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: email,
-      subject: 'Password Change Verification Code',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Password Change Verification</h2>
-          <p>Hello ${user.name},</p>
-          <p>You have requested to change your password. Please use the verification code below:</p>
-          <div style="background-color: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0;">
-            <h1 style="color: #007bff; font-size: 32px; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
+    let mailOptions;
+    
+    // Check if this is for bag distribution
+    if (customCode) {
+      mailOptions = {
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: email,
+        subject: 'Bag Distribution Verification Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">Bag Distribution Verification</h2>
+            <p>Hello,</p>
+            <p>A driver is distributing garbage bags to you. Please use the verification code below to confirm receipt:</p>
+            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0;">
+              <h1 style="color: #28a745; font-size: 32px; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
+            </div>
+            <p><strong>This code will expire in 5 minutes.</strong></p>
+            <p>If you did not expect to receive garbage bags, please ignore this email.</p>
+            <p>Best regards,<br>Your Waste Management Team</p>
           </div>
-          <p><strong>This code will expire in 5 minutes.</strong></p>
-          <p>If you did not request this password change, please ignore this email.</p>
-          <p>Best regards,<br>Your App Team</p>
-        </div>
-      `
-    };
+        `
+      };
+    } else {
+      mailOptions = {
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: email,
+        subject: 'Password Change Verification Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333;">Password Change Verification</h2>
+            <p>Hello ${user.name},</p>
+            <p>You have requested to change your password. Please use the verification code below:</p>
+            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; margin: 20px 0;">
+              <h1 style="color: #007bff; font-size: 32px; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
+            </div>
+            <p><strong>This code will expire in 5 minutes.</strong></p>
+            <p>If you did not request this password change, please ignore this email.</p>
+            <p>Best regards,<br>Your App Team</p>
+          </div>
+        `
+      };
+    }
 
     await transporter.sendMail(mailOptions);
 

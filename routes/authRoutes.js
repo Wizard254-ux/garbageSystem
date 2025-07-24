@@ -85,6 +85,8 @@ router.get('/client/:userId',
   async (req, res) => {
     try {
       const User = require('../models/User');
+      const Route = require('../models/Route');
+      
       const client = await User.findOne({
         _id: req.params.userId,
         role: 'client',
@@ -95,8 +97,29 @@ router.get('/client/:userId',
         return res.status(404).json({ success: false, error: 'Client not found' });
       }
       
-      res.json({ success: true, data: client });
+      // Get route details if available
+      let clientData = client.toObject();
+      if (clientData.route) {
+        const route = await Route.findById(clientData.route);
+        if (route) {
+          clientData.route = {
+            _id: route._id,
+            name: route.name,
+            path: route.path
+          };
+        }
+      }
+      
+      // Include full document paths
+      if (clientData.documents && clientData.documents.length > 0) {
+        clientData.documents = clientData.documents.map(doc => 
+          doc.startsWith('http') ? doc : `${req.protocol}://${req.get('host')}/${doc}`
+        );
+      }
+      
+      res.json({ success: true, client: clientData });
     } catch (error) {
+      console.error('Error fetching client details:', error);
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }

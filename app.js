@@ -14,6 +14,7 @@ const pickUpRouter = require('./routes/pickUp');
 const paymentRouter = require('./routes/payment');
 const mpesaRouter = require('./routes/mpesa');
 const invoiceRouter = require('./routes/invoices');
+const bagRouter = require('./routes/bags');
 require('./services/schedule'); // Initialize cron jobs
 const app = express();
 
@@ -38,6 +39,7 @@ app.use('/api/routes', routeRouter);
 app.use('/api/pickUps', pickUpRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/api/invoices', invoiceRouter);
+app.use('/api/bags', bagRouter);
 app.use(
   "/universal",
   (req, res, next) => {

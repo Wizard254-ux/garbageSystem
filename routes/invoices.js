@@ -157,4 +157,69 @@ router.delete('/:id', authenticateToken, authorizeRoles(['organization']), async
   }
 });
 
+// Get client invoices
+router.get('/client/:clientId', authenticateToken, authorizeRoles(['organization']), async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { page = 1, limit = 10, status, startDate, endDate } = req.query;
+    
+    // Verify client belongs to organization
+    const client = await User.findOne({
+      _id: clientId,
+      role: 'client',
+      organizationId: req.user._id
+    });
+    
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        error: 'Client not found or does not belong to your organization'
+      });
+    }
+    
+    // Build query
+    const query = { userId: clientId };
+    
+    if (status && status !== '') {
+      query.status = status;
+    }
+    
+    if (startDate || endDate) {
+      query.issuedDate = {};
+      if (startDate) query.issuedDate.$gte = new Date(startDate);
+      if (endDate) query.issuedDate.$lte = new Date(endDate);
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get invoices
+    const invoices = await Invoice.find(query)
+      .sort({ issuedDate: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+    
+    // Get total count
+    const totalInvoices = await Invoice.countDocuments(query);
+    
+    res.json({
+      success: true,
+      invoices,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalInvoices / parseInt(limit)),
+        totalInvoices,
+        hasNext: skip + invoices.length < totalInvoices,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching client invoices:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error'
+    });
+  }
+});
+
 module.exports = router;

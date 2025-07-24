@@ -986,6 +986,7 @@ const listUsers = async (req, res, userType) => {
         createdAt: user.createdAt,
         organizationId:req.user._id,
         accountNumber:user.accountNumber
+        
       };
 
       if (userType === 'client') {
