@@ -182,10 +182,20 @@ router.post('/routes',
   authenticateToken,
   authorizeRoles(['organization']),
   (req,res,next)=>{
-    console.log('hhhggbb',req.body)
+    console.log('Routes request:', req.body)
     next()
   },
   manageRoutes
+);
+
+// Get organization invoices - shortcut route
+router.get('/invoices', 
+  authenticateToken, 
+  authorizeRoles(['organization']),
+  (req, res, next) => {
+    // Forward to the invoices route
+    res.redirect(307, `/api/invoices${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`);
+  }
 )
 
 module.exports = router;

@@ -115,6 +115,45 @@ router.post('/', authenticateToken, authorizeRoles(['organization']), async (req
   }
 });
 
+// Get invoice by ID
+router.get('/:id', authenticateToken, authorizeRoles(['organization']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find all clients belonging to this organization
+    const clients = await User.find({ 
+      createdBy: req.user._id,
+      role: 'client'
+    }).select('_id');
+    
+    const clientIds = clients.map(client => client._id);
+    
+    // Find invoice and verify it belongs to a client of this organization
+    const invoice = await Invoice.findOne({
+      _id: id,
+      userId: { $in: clientIds }
+    }).populate('userId', 'name email phone address');
+    
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found or does not belong to your organization\'s clients'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: invoice
+    });
+  } catch (error) {
+    console.error('Error fetching invoice:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error'
+    });
+  }
+});
+
 // Delete invoice
 router.delete('/:id', authenticateToken, authorizeRoles(['organization']), async (req, res) => {
   try {
