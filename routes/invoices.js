@@ -26,8 +26,38 @@ router.get('/', authenticateToken, authorizeRoles(['organization']), async (req,
     };
     
     // Add filters if provided
-    if (status && status !=='') {
-      query.status = status;
+    if (status && status !== '') {
+      // Due status filters
+      if (status === 'overdue') {
+        query.dueStatus = 'overdue';
+      } else if (status === 'due') {
+        query.dueStatus = 'due';
+      } else if (status === 'upcoming') {
+        query.dueStatus = 'upcoming';
+      } 
+      // Payment status filters
+      else if (['fully_paid', 'partially_paid', 'unpaid'].includes(status)) {
+        // For payment status, check paymentStatus field
+        if (status === 'fully_paid') {
+          query.$or = [
+            { paymentStatus: 'fully_paid' },
+            { status: 'paid', paymentStatus: { $exists: false } }
+          ];
+        } else if (status === 'partially_paid') {
+          query.$or = [
+            { paymentStatus: 'partially_paid' },
+            { status: 'partial', paymentStatus: { $exists: false } }
+          ];
+        } else if (status === 'unpaid') {
+          query.$or = [
+            { paymentStatus: 'unpaid' },
+            { status: 'pending', paymentStatus: { $exists: false } }
+          ];
+        }
+      } else {
+        // For backward compatibility
+        query.status = status;
+      }
     }
     
     if (startDate || endDate) {
@@ -220,7 +250,37 @@ router.get('/client/:clientId', authenticateToken, authorizeRoles(['organization
     const query = { userId: clientId };
     
     if (status && status !== '') {
-      query.status = status;
+      // Due status filters
+      if (status === 'overdue') {
+        query.dueStatus = 'overdue';
+      } else if (status === 'due') {
+        query.dueStatus = 'due';
+      } else if (status === 'upcoming') {
+        query.dueStatus = 'upcoming';
+      } 
+      // Payment status filters
+      else if (['fully_paid', 'partially_paid', 'unpaid'].includes(status)) {
+        // For payment status, check paymentStatus field
+        if (status === 'fully_paid') {
+          query.$or = [
+            { paymentStatus: 'fully_paid' },
+            { status: 'paid', paymentStatus: { $exists: false } }
+          ];
+        } else if (status === 'partially_paid') {
+          query.$or = [
+            { paymentStatus: 'partially_paid' },
+            { status: 'partial', paymentStatus: { $exists: false } }
+          ];
+        } else if (status === 'unpaid') {
+          query.$or = [
+            { paymentStatus: 'unpaid' },
+            { status: 'pending', paymentStatus: { $exists: false } }
+          ];
+        }
+      } else {
+        // For backward compatibility
+        query.status = status;
+      }
     }
     
     if (startDate || endDate) {
@@ -235,6 +295,7 @@ router.get('/client/:clientId', authenticateToken, authorizeRoles(['organization
     // Get invoices
     const invoices = await Invoice.find(query)
       .sort({ issuedDate: -1 })
+      .select('_id invoiceNumber accountNumber totalAmount amountPaid remainingBalance status paymentStatus dueStatus dueDate issuedDate createdAt emailSent emailSentAt billingPeriod')
       .skip(skip)
       .limit(parseInt(limit));
     

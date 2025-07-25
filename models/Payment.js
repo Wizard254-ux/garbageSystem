@@ -53,6 +53,23 @@ const paymentSchema = new mongoose.Schema({
     enum: ['pending', 'completed', 'failed', 'cancelled'],
     default: 'pending'
   },
+  allocationStatus: {
+    type: String,
+    enum: ['unallocated', 'partially_allocated', 'fully_allocated'],
+    default: 'unallocated'
+  },
+  allocatedAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  remainingAmount: {
+    type: Number,
+    default: function() {
+      return this.amount;
+    },
+    min: 0
+  },
   paidAt: {
     type: Date
   },

@@ -39,10 +39,15 @@ const invoiceSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
-  status: {
+  paymentStatus: {
     type: String,
-    enum: ['pending', 'partial', 'paid', 'overdue'],
-    default: 'pending'
+    enum: ['unpaid', 'partially_paid', 'fully_paid'],
+    default: 'unpaid'
+  },
+  dueStatus: {
+    type: String,
+    enum: ['due', 'overdue'],
+    default: 'due'
   },
   dueDate: {
     type: Date,
@@ -71,17 +76,52 @@ invoiceSchema.methods.generateInvoiceNumber = function() {
   return `INV-${year}${month}-${randomNum}`;
 };
 
-// Calculate remaining balance
+// Calculate remaining balance and update statuses
 invoiceSchema.methods.updateBalance = function() {
   this.remainingBalance = this.totalAmount - this.amountPaid;
   
+  // Update payment status
   if (this.remainingBalance <= 0) {
-    this.status = 'paid';
+    this.paymentStatus = 'fully_paid';
     this.remainingBalance = 0;
   } else if (this.amountPaid > 0) {
-    this.status = 'partial';
-  } else if (new Date() > this.dueDate) {
+    this.paymentStatus = 'partially_paid';
+  } else {
+    this.paymentStatus = 'unpaid';
+  }
+  
+  // Update due status
+  // An invoice is 'due' when the billing period has ended but hasn't passed the grace period yet
+  // An invoice is 'overdue' when the current date is past the billing period end + grace period (due date)
+  if (this.paymentStatus !== 'fully_paid') {
+    const now = new Date();
+    const billingEnd = this.billingPeriod?.end ? new Date(this.billingPeriod.end) : null;
+    
+    if (billingEnd && now > billingEnd) {
+      // Billing period has ended
+      if (now > this.dueDate) {
+        // Past grace period (overdue)
+        this.dueStatus = 'overdue';
+      } else {
+        // Within grace period (due)
+        this.dueStatus = 'due';
+      }
+    } else {
+      // Billing period hasn't ended yet
+      this.dueStatus = 'upcoming';
+    }
+  } else {
+    // If fully paid, it's neither due nor overdue
+    this.dueStatus = 'paid';
+  }
+  
+  // For backward compatibility with existing code
+  if (this.paymentStatus === 'fully_paid') {
+    this.status = 'paid';
+  } else if (this.dueStatus === 'overdue') {
     this.status = 'overdue';
+  } else if (this.paymentStatus === 'partially_paid') {
+    this.status = 'partial';
   } else {
     this.status = 'pending';
   }

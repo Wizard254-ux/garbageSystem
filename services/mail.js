@@ -194,17 +194,38 @@ setInterval(cleanupExpiredCodes, 60000);
 
 
 // Send invoice email
-const sendInvoiceEmail = async (user, invoice) => {
+const sendInvoiceEmail = async (user, invoice, isOverdue = false) => {
   try {
+    const subject = isOverdue 
+      ? `OVERDUE: Invoice ${invoice.invoiceNumber} - Garbage Collection Service` 
+      : `Invoice ${invoice.invoiceNumber} - Garbage Collection Service`;
+
+    const headerColor = isOverdue ? '#dc3545' : '#333';
+    const headerText = isOverdue ? 'OVERDUE INVOICE REMINDER' : 'Monthly Invoice';
+    const messageText = isOverdue 
+      ? 'Your invoice payment is now overdue. Please make payment as soon as possible to avoid service interruption.'
+      : 'Your monthly garbage collection invoice is ready.';
+
+    // Add overdue notification box if applicable
+    const overdueBox = isOverdue ? `
+      <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+        <h4 style="color: #721c24; margin: 0 0 10px 0;">⚠️ PAYMENT OVERDUE</h4>
+        <p style="margin: 5px 0;">Your payment was due on <strong>${invoice.dueDate.toLocaleDateString()}</strong> and is now overdue.</p>
+        <p style="margin: 5px 0;">Please make payment immediately to avoid service interruption.</p>
+      </div>
+    ` : '';
+
     const mailOptions = {
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: user.email,
-      subject: `Invoice ${invoice.invoiceNumber} - Garbage Collection Service`,
+      subject: subject,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Monthly Invoice</h2>
+          <h2 style="color: ${headerColor};">${headerText}</h2>
           <p>Hello ${user.name},</p>
-          <p>Your monthly garbage collection invoice is ready.</p>
+          <p>${messageText}</p>
+          
+          ${overdueBox}
           
           <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin: 20px 0;">
             <h3 style="color: #495057; margin: 0 0 15px 0;">Invoice Details:</h3>
@@ -213,14 +234,16 @@ const sendInvoiceEmail = async (user, invoice) => {
             <p><strong>Client Type:</strong> ${user.clientType.charAt(0).toUpperCase() + user.clientType.slice(1)}</p>
             <p><strong>Billing Period:</strong> ${invoice.billingPeriod.start.toLocaleDateString()} - ${invoice.billingPeriod.end.toLocaleDateString()}</p>
             <p><strong>Due Date:</strong> ${invoice.dueDate.toLocaleDateString()}</p>
-            <p><strong>Amount Due:</strong> KES ${invoice.totalAmount.toLocaleString()}</p>
+            <p><strong>Amount Due:</strong> KES ${invoice.remainingBalance.toLocaleString()}</p>
+            <p><strong>Payment Status:</strong> <span style="color: ${invoice.paymentStatus === 'fully_paid' ? '#28a745' : invoice.paymentStatus === 'partially_paid' ? '#0d6efd' : '#ffc107'};">${(invoice.paymentStatus || invoice.status).toUpperCase().replace('_', ' ')}</span></p>
+            <p><strong>Due Status:</strong> <span style="color: ${invoice.dueStatus === 'overdue' || invoice.status === 'overdue' ? '#dc3545' : '#ffc107'};">${(invoice.dueStatus || (invoice.status === 'overdue' ? 'overdue' : 'due')).toUpperCase()}</span></p>
           </div>
           
           <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <h4 style="color: #0c5460; margin: 0 0 10px 0;">Payment Instructions:</h4>
             <p style="margin: 5px 0;">• Pay via M-Pesa Paybill</p>
             <p style="margin: 5px 0;">• Use your account number: <strong>${user.accountNumber}</strong></p>
-            <p style="margin: 5px 0;">• Amount: <strong>KES ${invoice.totalAmount.toLocaleString()}</strong></p>
+            <p style="margin: 5px 0;">• Amount: <strong>KES ${invoice.remainingBalance.toLocaleString()}</strong></p>
           </div>
           
           <p>Thank you for using our waste management service.</p>

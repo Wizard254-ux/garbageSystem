@@ -11,6 +11,7 @@ require('dotenv').config();
 const authRoutes= require('./routes/authRoutes');
 const routeRouter = require('./routes/routes');
 const pickUpRouter = require('./routes/pickUp');
+const pickupRouter = require('./routes/pickup');
 const paymentRouter = require('./routes/payment');
 const mpesaRouter = require('./routes/mpesa');
 const invoiceRouter = require('./routes/invoices');
@@ -37,6 +38,7 @@ mongoose.connect(process.env.MONGODB_URI)
 app.use('/api/auth', authRoutes);
 app.use('/api/routes', routeRouter);
 app.use('/api/pickUps', pickUpRouter);
+app.use('/api/pickups', pickupRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/api/invoices', invoiceRouter);
 app.use('/api/bags', bagRouter);

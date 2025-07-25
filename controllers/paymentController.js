@@ -25,16 +25,38 @@ const processPayment = async (req, res) => {
       });
     }
 
-    // Find oldest unpaid invoice
-    const unpaidInvoice = await Invoice.findOne({
+    // Find all unpaid or partially paid invoices for this user, sorted by due date (oldest first)
+    const unpaidInvoices = await Invoice.find({
       userId: user._id,
-      status: { $in: ['pending', 'partial', 'overdue'] }
+      $or: [
+        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
+        // For backward compatibility with existing invoices
+        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
+      ]
     }).sort({ dueDate: 1 });
 
-    if (!unpaidInvoice) {
-      return res.status(400).json({
-        success: false,
-        error: 'No pending invoices found for this account'
+    if (unpaidInvoices.length === 0) {
+      // Create payment record with no invoice allocation
+      const payment = new Payment({
+        userId: user._id,
+        accountNumber,
+        amount: parseFloat(amount),
+        paymentMethod,
+        transactionId,
+        mpesaReceiptNumber,
+        phoneNumber,
+        status: 'completed',
+        allocationStatus: 'unallocated',
+        remainingAmount: parseFloat(amount),
+        paidAt: new Date()
+      });
+
+      await payment.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Payment recorded successfully. No pending invoices found.',
+        data: { payment }
       });
     }
 
@@ -47,49 +69,63 @@ const processPayment = async (req, res) => {
       transactionId,
       mpesaReceiptNumber,
       phoneNumber,
-      invoiceId: unpaidInvoice._id,
       status: 'completed',
+      allocationStatus: 'unallocated',
+      remainingAmount: parseFloat(amount),
       paidAt: new Date()
     });
 
     await payment.save();
 
-    // Process payment against invoice
-    const paymentAmount = parseFloat(amount);
-    const invoiceBalance = unpaidInvoice.remainingBalance;
+    // Process payment against invoices
+    let remainingPaymentAmount = parseFloat(amount);
+    let allocatedAmount = 0;
+    const updatedInvoices = [];
 
-    if (paymentAmount >= invoiceBalance) {
-      // Payment covers the invoice completely
-      unpaidInvoice.amountPaid += invoiceBalance;
-      unpaidInvoice.updateBalance();
-      await unpaidInvoice.save();
+    // Allocate payment to invoices until payment is fully allocated or no more invoices
+    for (const invoice of unpaidInvoices) {
+      if (remainingPaymentAmount <= 0) break;
 
-      // Handle overpayment
-      const overpaymentAmount = paymentAmount - invoiceBalance;
-      if (overpaymentAmount > 0) {
-        const overpayment = new Overpayment({
-          userId: user._id,
-          accountNumber,
-          paymentId: payment._id,
-          amount: overpaymentAmount,
-          remainingAmount: overpaymentAmount
-        });
-        await overpayment.save();
-      }
-    } else {
-      // Partial payment
-      unpaidInvoice.amountPaid += paymentAmount;
-      unpaidInvoice.updateBalance();
-      await unpaidInvoice.save();
+      const invoiceBalance = invoice.remainingBalance;
+      const amountToAllocate = Math.min(remainingPaymentAmount, invoiceBalance);
+
+      // Update invoice
+      invoice.amountPaid += amountToAllocate;
+      invoice.updateBalance(); // This will update status to 'paid', 'partial', or 'overdue'
+      await invoice.save();
+      updatedInvoices.push(invoice);
+
+      // Update payment allocation
+      remainingPaymentAmount -= amountToAllocate;
+      allocatedAmount += amountToAllocate;
     }
+
+    // Update payment allocation status
+    payment.allocatedAmount = allocatedAmount;
+    payment.remainingAmount = remainingPaymentAmount;
+    
+    if (allocatedAmount === 0) {
+      payment.allocationStatus = 'unallocated';
+    } else if (remainingPaymentAmount > 0) {
+      payment.allocationStatus = 'partially_allocated';
+    } else {
+      payment.allocationStatus = 'fully_allocated';
+    }
+
+    // If first invoice was allocated to, set it as the invoiceId
+    if (updatedInvoices.length > 0) {
+      payment.invoiceId = updatedInvoices[0]._id;
+    }
+
+    await payment.save();
 
     res.status(200).json({
       success: true,
       message: 'Payment processed successfully',
       data: {
         payment: payment,
-        invoice: unpaidInvoice,
-        overpayment: paymentAmount > invoiceBalance ? paymentAmount - invoiceBalance : 0
+        updatedInvoices: updatedInvoices,
+        remainingAmount: remainingPaymentAmount
       }
     });
 
@@ -121,88 +157,121 @@ const generateMonthlyInvoices = async (req, res) => {
       const monthsSinceStart = (currentDate.getFullYear() - serviceStart.getFullYear()) * 12 + 
                               (currentDate.getMonth() - serviceStart.getMonth());
 
-      if (monthsSinceStart >= 0) {
-        // Calculate billing period
-        const billingStart = new Date(serviceStart);
-        billingStart.setMonth(serviceStart.getMonth() + monthsSinceStart);
-        
-        const billingEnd = new Date(billingStart);
-        billingEnd.setMonth(billingStart.getMonth() + 1);
-        billingEnd.setDate(billingEnd.getDate() - 1);
+      // Skip if client was just created (less than a month ago)
+      if (monthsSinceStart <= 0) {
+        continue;
+      }
 
-        // Check if invoice already exists for this period
-        const existingInvoice = await Invoice.findOne({
+      // Calculate billing period
+      const billingStart = new Date(serviceStart);
+      billingStart.setMonth(serviceStart.getMonth() + monthsSinceStart);
+      
+      const billingEnd = new Date(billingStart);
+      billingEnd.setMonth(billingStart.getMonth() + 1);
+      billingEnd.setDate(billingEnd.getDate() - 1);
+
+      // Check if invoice already exists for this period
+      const existingInvoice = await Invoice.findOne({
+        userId: client._id,
+        'billingPeriod.start': billingStart,
+        'billingPeriod.end': billingEnd
+      });
+
+      if (!existingInvoice) {
+        // Check for available payments with remaining amounts
+        const availablePayments = await Payment.find({
           userId: client._id,
-          'billingPeriod.start': billingStart,
-          'billingPeriod.end': billingEnd
+          status: 'completed',
+          allocationStatus: { $in: ['unallocated', 'partially_allocated'] },
+          remainingAmount: { $gt: 0 }
+        }).sort({ createdAt: 1 });
+
+        let totalAvailableAmount = availablePayments.reduce((sum, payment) => sum + payment.remainingAmount, 0);
+        let invoiceAmount = client.monthlyRate;
+        let amountPaid = 0;
+
+        // Apply available payment amounts one by one until invoice is paid
+        if (totalAvailableAmount > 0) {
+          let remainingInvoiceAmount = invoiceAmount;
+          
+          for (const payment of availablePayments) {
+            if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
+            
+            const amountToApply = Math.min(payment.remainingAmount, remainingInvoiceAmount);
+            
+            // Apply payment to invoice
+            payment.allocatedAmount += amountToApply;
+            payment.remainingAmount -= amountToApply;
+            amountPaid += amountToApply;
+            remainingInvoiceAmount -= amountToApply;
+            
+            // Update payment allocation status
+            if (payment.remainingAmount <= 0) {
+              payment.allocationStatus = 'fully_allocated';
+            } else {
+              payment.allocationStatus = 'partially_allocated';
+            }
+            
+            await payment.save();
+          }
+        }
+
+        // Calculate due date based on grace period
+        const gracePeriod = client.gracePeriod || 5; // Default to 5 days if not set
+        const dueDate = new Date(billingEnd);
+        dueDate.setDate(dueDate.getDate() + gracePeriod);
+
+        // Create new invoice
+        const invoice = new Invoice({
+          userId: client._id,
+          accountNumber: client.accountNumber,
+          billingPeriod: {
+            start: billingStart,
+            end: billingEnd
+          },
+          totalAmount: invoiceAmount,
+          amountPaid: amountPaid,
+          remainingBalance: invoiceAmount - amountPaid,
+          dueDate: dueDate,
+          paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
+          dueStatus: 'due' // Will be updated to 'overdue' by the updateBalance method if past due date
         });
 
-        if (!existingInvoice) {
-          // Check for available overpayments
-          const availableOverpayments = await Overpayment.find({
-            userId: client._id,
-            status: 'available',
-            remainingAmount: { $gt: 0 }
-          }).sort({ createdAt: 1 });
+        await invoice.save();
+        invoicesCreated.push(invoice);
 
-          let totalOverpayment = availableOverpayments.reduce((sum, op) => sum + op.remainingAmount, 0);
-          let invoiceAmount = client.monthlyRate;
-          let amountPaid = 0;
-
-          // Apply overpayments one by one until invoice is paid
-          if (totalOverpayment > 0) {
-            let remainingInvoiceAmount = invoiceAmount;
-            
-            for (const overpayment of availableOverpayments) {
-              if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
-              
-              const amountToApply = Math.min(overpayment.remainingAmount, remainingInvoiceAmount);
-              
-              // Apply overpayment to invoice
-              overpayment.appliedAmount += amountToApply;
-              overpayment.remainingAmount -= amountToApply;
-              amountPaid += amountToApply;
-              remainingInvoiceAmount -= amountToApply;
-              
-              // Update overpayment status if fully used
-              if (overpayment.remainingAmount <= 0) {
-                overpayment.status = 'applied';
-              }
-              
-              await overpayment.save();
-            }
-          }
-
-          // Create new invoice
-          const invoice = new Invoice({
-            userId: client._id,
-            accountNumber: client.accountNumber,
-            billingPeriod: {
-              start: billingStart,
-              end: billingEnd
-            },
-            totalAmount: invoiceAmount,
-            amountPaid: amountPaid,
-            remainingBalance: invoiceAmount - amountPaid,
-            dueDate: new Date(billingEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
-          });
-
+        // Send invoice email
+        try {
+          await sendInvoiceEmail(client, invoice);
+          invoice.emailSent = true;
+          invoice.emailSentAt = new Date();
           await invoice.save();
-          invoicesCreated.push(invoice);
-
-          // Send invoice email
+          
+          // If overpayment was applied, send notification
+          if (amountPaid > 0) {
+            await sendOverpaymentNotification(client, invoice, amountPaid);
+          }
+        } catch (emailError) {
+          console.error(`Failed to send invoice email to ${client.email}:`, emailError);
+        }
+      } else if (existingInvoice.paymentStatus !== 'fully_paid') {
+        // Check if invoice is now overdue based on due date
+        if (new Date() > existingInvoice.dueDate && existingInvoice.dueStatus !== 'overdue') {
+          existingInvoice.dueStatus = 'overdue';
+          // For backward compatibility
+          if (existingInvoice.paymentStatus === 'unpaid') {
+            existingInvoice.status = 'overdue';
+          }
+          await existingInvoice.save();
+          
+          // Send overdue notification
           try {
-            await sendInvoiceEmail(client, invoice);
-            invoice.emailSent = true;
-            invoice.emailSentAt = new Date();
-            await invoice.save();
-            
-            // If overpayment was applied, send notification
-            if (amountPaid > 0) {
-              await sendOverpaymentNotification(client, invoice, amountPaid);
-            }
+            await sendInvoiceEmail(client, existingInvoice, true); // true indicates overdue notification
+            existingInvoice.emailSent = true;
+            existingInvoice.emailSentAt = new Date();
+            await existingInvoice.save();
           } catch (emailError) {
-            console.error(`Failed to send invoice email to ${client.email}:`, emailError);
+            console.error(`Failed to send overdue notification to ${client.email}:`, emailError);
           }
         }
       }
@@ -241,6 +310,7 @@ const getPaymentHistory = async (req, res) => {
     const payments = await Payment.find({ userId: user._id })
       .populate('invoiceId')
       .sort({ createdAt: -1 })
+      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
@@ -277,6 +347,7 @@ const getFullPaymentHistory = async (req, res) => {
     const payments = await Payment.find()
       .populate('invoiceId')
       .sort({ createdAt: -1 })
+      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
@@ -438,7 +509,9 @@ const createManualInvoice = async (req, res) => {
       totalAmount: invoiceAmount,
       amountPaid: amountPaid,
       remainingBalance: invoiceAmount - amountPaid,
-      dueDate: new Date(dueDate)
+      dueDate: new Date(dueDate),
+      paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
+      dueStatus: new Date() > new Date(dueDate) ? 'overdue' : 'due'
     });
 
     await invoice.save();
@@ -503,13 +576,18 @@ const getClientPaymentInfo = async (req, res) => {
     // Get unpaid invoices
     const unpaidInvoices = await Invoice.find({
       userId: client._id,
-      status: { $in: ['pending', 'partial', 'overdue'] }
+      $or: [
+        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
+        // For backward compatibility with existing invoices
+        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
+      ]
     }).sort({ dueDate: 1 });
 
     // Get payment history
     const payments = await Payment.find({ userId: client._id })
       .populate('invoiceId')
       .sort({ createdAt: -1 })
+      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt')
       .limit(10);
 
     // Get overpayments
@@ -568,7 +646,11 @@ const getOrganizationStats = async (req, res) => {
     // Get unpaid invoices
     const unpaidInvoices = await Invoice.find({
       userId: { $in: clientIds },
-      status: { $in: ['pending', 'partial', 'overdue'] }
+      $or: [
+        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
+        // For backward compatibility with existing invoices
+        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
+      ]
     }).populate('userId', 'name accountNumber');
 
     // Get total amounts

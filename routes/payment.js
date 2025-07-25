@@ -97,6 +97,7 @@ router.get('/client/:clientId/payments',
       const payments = await Payment.find(query)
         .populate('invoiceId')
         .sort({ createdAt: -1 })
+        .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
         .skip(skip)
         .limit(parseInt(limit));
       
@@ -129,6 +130,143 @@ router.get('/organization/stats',
   authenticateToken,
   authorizeRoles(['organization']),
   getOrganizationStats
+);
+
+// Export payments
+router.get('/export', 
+  authenticateToken,
+  authorizeRoles(['organization']),
+  async (req, res) => {
+    try {
+      const { format = 'csv', startDate, endDate, accountNumber } = req.query;
+      
+      // Build query
+      const query = {};
+      
+      if (accountNumber) {
+        query.accountNumber = accountNumber;
+      }
+      
+      if (startDate || endDate) {
+        query.createdAt = {};
+        if (startDate) query.createdAt.$gte = new Date(startDate);
+        if (endDate) query.createdAt.$lte = new Date(endDate);
+      }
+      
+      // Get payments
+      const payments = await Payment.find(query)
+        .populate('invoiceId')
+        .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
+        .sort({ createdAt: -1 });
+      
+      // Format data based on requested format
+      let data;
+      let contentType;
+      let filename;
+      
+      if (format === 'csv') {
+        // CSV format
+        const csvRows = [];
+        
+        // Add headers
+        csvRows.push(['Date', 'Account Number', 'Amount', 'Method', 'Receipt', 'Phone', 'Status', 'Allocation Status', 'Allocated Amount', 'Remaining Amount'].join(','));
+        
+        // Add data rows
+        payments.forEach(payment => {
+          const row = [
+            new Date(payment.createdAt).toISOString().split('T')[0],
+            payment.accountNumber,
+            payment.amount,
+            payment.paymentMethod,
+            payment.mpesaReceiptNumber || payment.transactionId || '',
+            payment.phoneNumber,
+            payment.status,
+            payment.allocationStatus || 'unallocated',
+            payment.allocatedAmount || 0,
+            payment.remainingAmount || payment.amount || 0
+          ];
+          
+          csvRows.push(row.join(','));
+        });
+        
+        data = csvRows.join('\n');
+        contentType = 'text/csv';
+        filename = 'payments-export.csv';
+      } else if (format === 'excel') {
+        // For Excel, we'll just send CSV with a different content type
+        // In a real app, you'd use a library like exceljs to create a proper Excel file
+        const csvRows = [];
+        
+        // Add headers
+        csvRows.push(['Date', 'Account Number', 'Amount', 'Method', 'Receipt', 'Phone', 'Status', 'Allocation Status', 'Allocated Amount', 'Remaining Amount'].join(','));
+        
+        // Add data rows
+        payments.forEach(payment => {
+          const row = [
+            new Date(payment.createdAt).toISOString().split('T')[0],
+            payment.accountNumber,
+            payment.amount,
+            payment.paymentMethod,
+            payment.mpesaReceiptNumber || payment.transactionId || '',
+            payment.phoneNumber,
+            payment.status,
+            payment.allocationStatus || 'unallocated',
+            payment.allocatedAmount || 0,
+            payment.remainingAmount || payment.amount || 0
+          ];
+          
+          csvRows.push(row.join(','));
+        });
+        
+        data = csvRows.join('\n');
+        contentType = 'application/vnd.ms-excel';
+        filename = 'payments-export.xls';
+      } else if (format === 'pdf') {
+        // For PDF, we'll just send a simple text representation
+        // In a real app, you'd use a library like PDFKit to create a proper PDF
+        const textRows = [];
+        
+        textRows.push('Payment Export');
+        textRows.push('=============');
+        textRows.push('');
+        
+        payments.forEach(payment => {
+          textRows.push(`Date: ${new Date(payment.createdAt).toISOString().split('T')[0]}`);
+          textRows.push(`Account: ${payment.accountNumber}`);
+          textRows.push(`Amount: ${payment.amount}`);
+          textRows.push(`Method: ${payment.paymentMethod}`);
+          textRows.push(`Receipt: ${payment.mpesaReceiptNumber || payment.transactionId || 'N/A'}`);
+          textRows.push(`Phone: ${payment.phoneNumber}`);
+          textRows.push(`Status: ${payment.status}`);
+          textRows.push(`Allocation Status: ${payment.allocationStatus || 'unallocated'}`);
+          textRows.push(`Allocated Amount: ${payment.allocatedAmount || 0}`);
+          textRows.push(`Remaining Amount: ${payment.remainingAmount || payment.amount || 0}`);
+          textRows.push('-------------------');
+        });
+        
+        data = textRows.join('\n');
+        contentType = 'text/plain';
+        filename = 'payments-export.txt';
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid format. Supported formats: csv, excel, pdf'
+        });
+      }
+      
+      // Set headers and send response
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      res.send(data);
+      
+    } catch (error) {
+      console.error('Export payments error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to export payments'
+      });
+    }
+  }
 );
 
 module.exports = router;

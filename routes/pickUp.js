@@ -1,41 +1,64 @@
-// routes/authRoutes.js
 const express = require('express');
-const {batchMarkUnpicked,markPicked,getUsersByPickupStatus} =require('../controllers/PickUpController.js')
+const { 
+  getPickups, 
+  createPickup, 
+  createWeeklyPickups,
+  markMissedPickups,
+  updatePickupStatus,
+  getRoutes,
+  getDrivers
+} = require('../controllers/pickupController');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+
 const router = express.Router();
 
-router.post('/mark-picked',
+// Get all pickups with filtering
+router.get('/', 
   authenticateToken,
-    authorizeRoles(['organization', 'driver']),
-    markPicked
-)
+  authorizeRoles(['admin', 'organization']),
+  getPickups
+);
 
-router.get('/:routeId/:pickStatus',
+// Create pickup
+router.post('/', 
   authenticateToken,
-    authorizeRoles(['organization', 'driver']),
-    getUsersByPickupStatus
-)
+  authorizeRoles(['admin', 'organization']),
+  createPickup
+);
 
-router.get('/:pickStatus',
+// Create weekly pickups
+router.post('/weekly', 
   authenticateToken,
-    authorizeRoles(['organization', 'driver']),
-    getUsersByPickupStatus
-)
+  authorizeRoles(['admin', 'organization']),
+  createWeeklyPickups
+);
 
-router.post('/batch-mark-unpicked', async (req, res) => {
-  try {
-    await batchMarkUnpicked();
-    return res.status(200).json({
-      success: true,
-      message: 'Batch job completed successfully'
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: 'Batch job failed'
-    });
-  }
-});
+// Mark missed pickups
+router.post('/mark-missed', 
+  authenticateToken,
+  authorizeRoles(['admin', 'organization']),
+  markMissedPickups
+);
 
+// Update pickup status
+router.put('/:id', 
+  authenticateToken,
+  authorizeRoles(['admin', 'organization', 'driver']),
+  updatePickupStatus
+);
+
+// Get routes for dropdown
+router.get('/routes', 
+  authenticateToken,
+  authorizeRoles(['admin', 'organization']),
+  getRoutes
+);
+
+// Get drivers for dropdown
+router.get('/drivers', 
+  authenticateToken,
+  authorizeRoles(['admin', 'organization']),
+  getDrivers
+);
 
 module.exports = router;

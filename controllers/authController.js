@@ -22,7 +22,6 @@ const setCookieToken = (res, token) => {
 const register = async (req, res) => {
   try {
     const { name, email, password, role, phone } = req.body;
-    
     // Validation for basic fields
     if (!name || !email || !role || !phone) {
       return res.status(400).json({ message: 'Name, email, role, and phone are required.' });
@@ -146,7 +145,7 @@ const register = async (req, res) => {
           }
 
           userData.route = validRoute.id;
-          userData.pickUpDay = pickUpDay.toLowerCase();
+          // No need to set pickUpDay as it will be calculated from serviceStartDate
           userData.address = address;
           userData.clientType = clientType;
           userData.serviceStartDate = startDate;
@@ -155,6 +154,17 @@ const register = async (req, res) => {
 
 
     const user = await User.create(userData);
+    
+    // Create initial pickup for client
+    if (role === 'client') {
+      try {
+        const { createInitialPickup } = require('../services/pickupService');
+        await createInitialPickup(user._id);
+      } catch (pickupError) {
+        console.error('Failed to create initial pickup:', pickupError);
+        // Continue with user creation even if pickup creation fails
+      }
+    }
     
     // Generate token
     const token = generateToken(user._id);

@@ -30,12 +30,9 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  pickUpDay:{
-    type: String,
-    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-  },
-  route:{
-    type: mongoose.Schema.ObjectId,
+  // pickUpDay is now calculated from serviceStartDate
+  routeId:{
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Route',
   },
   // Client-specific fields
@@ -71,6 +68,12 @@ const userSchema = new mongoose.Schema({
       return this.role === 'client';
     },
     min: 0
+  },
+  gracePeriod: {
+    type: Number,
+    default: 5,
+    min: 0,
+    max: 30
   },
   createdBy:{
     type: mongoose.Schema.ObjectId,

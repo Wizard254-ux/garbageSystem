@@ -1,11 +1,21 @@
 const cron = require('node-cron');
-const {batchMarkUnpicked} = require('../controllers/PickUpController.js');
-const {generateMonthlyInvoices} = require('../controllers/paymentController.js');
+const { generateMonthlyInvoices } = require('../controllers/paymentController.js');
+const pickupService = require('./pickupService');
 
-// Run every Sunday at 11:59 PM - Mark unpicked garbage
-cron.schedule('59 23 * * 0', () => {
-  console.log('Running weekly batch job to mark unpicked garbage...');
-  batchMarkUnpicked();
+// Run every Sunday at 11:59 PM - Mark missed pickups and create new pickups for the week
+cron.schedule('59 23 * * 0', async () => {
+  console.log('Running weekly batch job to mark missed pickups and create new pickups...');
+  try {
+    // Mark missed pickups from previous week
+    const missedPickups = await pickupService.markMissedPickups();
+    console.log(`Marked ${missedPickups.length} pickups as missed`);
+    
+    // Create pickups for the new week
+    const newPickups = await pickupService.createWeeklyPickups();
+    console.log(`Created ${newPickups.length} pickups for the new week`);
+  } catch (error) {
+    console.error('Weekly pickup job failed:', error);
+  }
 });
 
 // Run every day at midnight (00:00:00) - Generate invoices and check for expired payments
