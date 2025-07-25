@@ -98,11 +98,11 @@ const register = async (req, res) => {
     }
 
     if (role === 'client') {
-          const { route, pickUpDay, address, clientType, serviceStartDate, monthlyRate, numberOfUnits } = req.body;
+          const { route, address, clientType, serviceStartDate, monthlyRate, numberOfUnits } = req.body;
 
-          if (!route || !pickUpDay || !address || !clientType || !serviceStartDate || !monthlyRate) {
+          if (!route || !address || !clientType || !serviceStartDate || !monthlyRate) {
             return res.status(400).json({ 
-              message: 'Route, pick-up day, address, client type, service start date, and monthly rate are required for clients.' 
+              message: 'Route, address, client type, service start date, and monthly rate are required for clients.' 
             });
           }
 
@@ -144,8 +144,7 @@ const register = async (req, res) => {
             userData.numberOfUnits = 1; // Default to 1 unit for residential
           }
 
-          userData.route = validRoute.id;
-          // No need to set pickUpDay as it will be calculated from serviceStartDate
+          userData.routeId = validRoute._id;
           userData.address = address;
           userData.clientType = clientType;
           userData.serviceStartDate = startDate;
@@ -843,9 +842,12 @@ const editUser = async (req, res, userType, userId, updateData) => {
 
     // Define allowed fields for update based on user type
     const commonFields = ['name', 'email', 'phone', 'isActive'];
-    const clientFields = ['route', 'pickUpDay', 'address', 'clientType', 'monthlyRate', 'numberOfUnits'];
+    const clientFields = ['routeId', 'address', 'clientType', 'monthlyRate', 'numberOfUnits'];
+    const driverFields = ['documents'];
     const allowedFields = userType === 'client' 
       ? [...commonFields, ...clientFields] 
+      : userType === 'driver'
+      ? [...commonFields, ...driverFields]
       : commonFields;
 
     const filteredUpdateData = {};
@@ -947,8 +949,7 @@ const editUser = async (req, res, userType, userId, updateData) => {
     };
 
     if (userType === 'client') {
-      responseUser.route = updatedUser.route;
-      responseUser.pickUpDay = updatedUser.pickUpDay;
+      responseUser.routeId = updatedUser.routeId;
       responseUser.address = updatedUser.address;
       responseUser.clientType = updatedUser.clientType;
       responseUser.monthlyRate = updatedUser.monthlyRate;
@@ -1060,8 +1061,7 @@ const listUsers = async (req, res, userType) => {
       };
 
       if (userType === 'client') {
-        userObj.route = user.route;
-        userObj.pickUpDay = user.pickUpDay;
+        userObj.routeId = user.routeId;
         userObj.address = user.address;
         userObj.clientType = user.clientType;
         userObj.monthlyRate = user.monthlyRate;

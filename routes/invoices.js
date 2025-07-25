@@ -226,6 +226,175 @@ router.delete('/:id', authenticateToken, authorizeRoles(['organization']), async
   }
 });
 
+// Get aging summary - unpaid and partially paid invoices
+router.get('/aging-summary', authenticateToken, authorizeRoles(['organization']), async (req, res) => {
+  try {
+    const { page = 1, limit = 10, paymentStatus, dueStatus, startDate, endDate, accountNumber } = req.query;
+    
+    // Find all clients belonging to this organization
+    const clients = await User.find({ 
+      createdBy: req.user._id,
+      role: 'client'
+    }).select('_id');
+    
+    const clientIds = clients.map(client => client._id);
+    
+    // Build query for unpaid and partially paid invoices only
+    const query = {
+      userId: { $in: clientIds },
+      $or: [
+        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
+        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
+      ]
+    };
+    
+    // Add filters
+    if (paymentStatus && paymentStatus !== '') {
+      if (paymentStatus === 'unpaid') {
+        query.$or = [
+          { paymentStatus: 'unpaid' },
+          { status: 'pending', paymentStatus: { $exists: false } }
+        ];
+      } else if (paymentStatus === 'partially_paid') {
+        query.$or = [
+          { paymentStatus: 'partially_paid' },
+          { status: 'partial', paymentStatus: { $exists: false } }
+        ];
+      }
+    }
+    
+    if (dueStatus && dueStatus !== '') {
+      if (dueStatus === 'overdue') {
+        query.$and = query.$and || [];
+        query.$and.push({
+          $or: [
+            { dueStatus: 'overdue' },
+            { status: 'overdue', dueStatus: { $exists: false } }
+          ]
+        });
+      } else if (dueStatus === 'due') {
+        query.$and = query.$and || [];
+        query.$and.push({ dueStatus: 'due' });
+      }
+    }
+    
+    if (accountNumber && accountNumber !== '') {
+      query.accountNumber = { $regex: accountNumber, $options: 'i' };
+    }
+    
+    if (startDate || endDate) {
+      query.dueDate = {};
+      if (startDate) query.dueDate.$gte = new Date(startDate);
+      if (endDate) query.dueDate.$lte = new Date(endDate);
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get invoices with client details
+    const invoices = await Invoice.find(query)
+      .sort({ dueDate: 1, issuedDate: -1 }) // Sort by due date first, then by issued date
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('userId', 'name email phone address accountNumber');
+    
+    // Get total count
+    const totalInvoices = await Invoice.countDocuments(query);
+    
+    // Calculate aging summary statistics
+    const agingSummary = await Invoice.aggregate([
+      { $match: { userId: { $in: clientIds } } },
+      {
+        $match: {
+          $or: [
+            { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
+            { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalUnpaidAmount: { $sum: '$remainingBalance' },
+          totalInvoices: { $sum: 1 },
+          overdueCount: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$dueStatus', 'overdue'] },
+                    { $eq: ['$status', 'overdue'] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          overdueAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$dueStatus', 'overdue'] },
+                    { $eq: ['$status', 'overdue'] }
+                  ]
+                },
+                '$remainingBalance',
+                0
+              ]
+            }
+          },
+          dueCount: {
+            $sum: {
+              $cond: [
+                { $eq: ['$dueStatus', 'due'] },
+                1,
+                0
+              ]
+            }
+          },
+          dueAmount: {
+            $sum: {
+              $cond: [
+                { $eq: ['$dueStatus', 'due'] },
+                '$remainingBalance',
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+    
+    res.json({
+      success: true,
+      data: invoices,
+      summary: agingSummary[0] || {
+        totalUnpaidAmount: 0,
+        totalInvoices: 0,
+        overdueCount: 0,
+        overdueAmount: 0,
+        dueCount: 0,
+        dueAmount: 0
+      },
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalInvoices / parseInt(limit)),
+        totalInvoices,
+        hasNext: skip + invoices.length < totalInvoices,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching aging summary:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error'
+    });
+  }
+});
+
 // Get client invoices
 router.get('/client/:clientId', authenticateToken, authorizeRoles(['organization']), async (req, res) => {
   try {
