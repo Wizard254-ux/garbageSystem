@@ -24,7 +24,24 @@ app.use(morgan('dev'));
 
 app.use(cookieParser());
 // Middleware
-app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://gabbage-web.vercel.app',
+  process.env.CLIENT_URL
+].filter(Boolean); // remove undefined/null
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow requests with no origin (e.g. mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 
