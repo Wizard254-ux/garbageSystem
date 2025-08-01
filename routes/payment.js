@@ -31,47 +31,50 @@ router.get('/history/:accountNumber',
   authorizeRoles(['admin', 'organization']),
   getPaymentHistory
 );
-router.get('/history', 
+
+router.get('/history',
   authenticateToken,
   authorizeRoles(['admin', 'organization']),
   getFullPaymentHistory
 );
 
 // Get account statement
-router.get('/statement/:accountNumber', 
+router.get('/statement/:accountNumber',
   authenticateToken,
   authorizeRoles(['admin', 'organization', 'client']),
   getAccountStatement
 );
 
 // Create manual invoice for testing
-router.post('/create-invoice', 
+router.post('/create-invoice',
   authenticateToken,
   authorizeRoles(['admin', 'organization']),
   createManualInvoice
 );
 
 // Get client payment info (summary)
-router.get('/client/:clientId', 
+router.get('/client/:clientId',
   authenticateToken,
   authorizeRoles(['organization']),
   getClientPaymentInfo
 );
 
 // Get client payments (detailed list)
-router.get('/client/:clientId/payments', 
+router.get('/client/:clientId/payments',
   authenticateToken,
   authorizeRoles(['organization']),
   async (req, res) => {
     try {
       const { clientId } = req.params;
       const { page = 1, limit = 10, startDate, endDate } = req.query;
-      
-      // Verify client belongs to organization
+
+      // Verify client belongs to organization - FIXED: removed double "where"
       const client = await User.findOne({
-        _id: clientId,
-        role: 'client',
-        organizationId: req.user._id
+        where: {
+          id: clientId,
+          role: 'client',
+          organizationId: req.user.id
+        }
       });
       
       if (!client) {
@@ -82,27 +85,30 @@ router.get('/client/:clientId/payments',
       }
       
       // Build query
-      const query = { userId: clientId };
+      const { Op } = require('sequelize');
+      const whereClause = { userId: clientId };
       
       if (startDate || endDate) {
-        query.createdAt = {};
-        if (startDate) query.createdAt.$gte = new Date(startDate);
-        if (endDate) query.createdAt.$lte = new Date(endDate);
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt[Op.gte] = new Date(startDate);
+        if (endDate) whereClause.createdAt[Op.lte] = new Date(endDate);
       }
       
       // Calculate pagination
       const skip = (parseInt(page) - 1) * parseInt(limit);
       
       // Get payments
-      const payments = await Payment.find(query)
-        .populate('invoiceId')
-        .sort({ createdAt: -1 })
-        .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
-        .skip(skip)
-        .limit(parseInt(limit));
+      const payments = await Payment.findAll({
+        where: whereClause,
+        include: [{ model: require('../models/Invoice'), as: 'invoice' }],
+        order: [['createdAt', 'DESC']],
+        attributes: ['id', 'accountNumber', 'amount', 'paymentMethod', 'mpesaReceiptNumber', 'phoneNumber', 'status', 'allocationStatus', 'allocatedAmount', 'remainingAmount', 'createdAt', 'invoiceId'],
+        offset: skip,
+        limit: parseInt(limit)
+      });
       
       // Get total count
-      const totalPayments = await Payment.countDocuments(query);
+      const totalPayments = await Payment.count({ where: whereClause });
       
       res.json({
         success: true,
@@ -141,23 +147,26 @@ router.get('/export',
       const { format = 'csv', startDate, endDate, accountNumber } = req.query;
       
       // Build query
-      const query = {};
+      const { Op } = require('sequelize');
+      const whereClause = {};
       
       if (accountNumber) {
-        query.accountNumber = accountNumber;
+        whereClause.accountNumber = accountNumber;
       }
       
       if (startDate || endDate) {
-        query.createdAt = {};
-        if (startDate) query.createdAt.$gte = new Date(startDate);
-        if (endDate) query.createdAt.$lte = new Date(endDate);
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt[Op.gte] = new Date(startDate);
+        if (endDate) whereClause.createdAt[Op.lte] = new Date(endDate);
       }
       
       // Get payments
-      const payments = await Payment.find(query)
-        .populate('invoiceId')
-        .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
-        .sort({ createdAt: -1 });
+      const payments = await Payment.findAll({
+        where: whereClause,
+        include: [{ model: require('../models/Invoice'), as: 'invoice' }],
+        attributes: ['id', 'accountNumber', 'amount', 'paymentMethod', 'mpesaReceiptNumber', 'phoneNumber', 'status', 'allocationStatus', 'allocatedAmount', 'remainingAmount', 'createdAt', 'invoiceId'],
+        order: [['createdAt', 'DESC']]
+      });
       
       // Format data based on requested format
       let data;

@@ -1,6 +1,7 @@
 const Pickup = require('../models/Pickup');
 const User = require('../models/User');
 const Route = require('../models/Route');
+const { Op } = require('sequelize');
 
 // Helper function to get the date of a specific day in the current week
 const getDateOfDay = (dayName, referenceDate = new Date()) => {
@@ -43,13 +44,13 @@ const getStartOfWeek = (date = new Date()) => {
 const createInitialPickup = async (userId) => {
   try {
     // Get client details
-    const client = await User.findById(userId);
+    const client = await User.findByPk(userId);
     if (!client || client.role !== 'client') {
       throw new Error('Client not found');
     }
     
     // Get route details
-    const route = await Route.findById(client.routeId);
+    const route = await Route.findByPk(client.routeId);
     if (!route) {
       throw new Error('Route not found');
     }
@@ -68,16 +69,14 @@ const createInitialPickup = async (userId) => {
     const pickupDate = new Date(serviceStartDate);
     
     // Create the pickup
-    const pickup = new Pickup({
-      userId: client._id,
+    const pickup = await Pickup.create({
+      userId: client.id,
       routeId: client.routeId,
       scheduledDate: pickupDate,
       pickupDay,
       weekOf,
       status: 'scheduled'
     });
-    
-    await pickup.save();
     return pickup;
   } catch (error) {
     console.error('Error creating initial pickup:', error);
@@ -89,10 +88,12 @@ const createInitialPickup = async (userId) => {
 const createWeeklyPickups = async () => {
   try {
     // Get all active clients
-    const clients = await User.find({ 
-      role: 'client', 
-      isActive: true,
-      serviceStartDate: { $exists: true }
+    const clients = await User.findAll({ 
+      where: {
+        role: 'client', 
+        isActive: true,
+        serviceStartDate: { [Op.ne]: null }
+      }
     });
     
     const currentDate = new Date();
@@ -110,8 +111,10 @@ const createWeeklyPickups = async () => {
       
       // Check if a pickup already exists for this client for this week
       const existingPickup = await Pickup.findOne({
-        userId: client._id,
-        weekOf
+        where: {
+          userId: client.id,
+          weekOf
+        }
       });
       
       // Skip if pickup already exists
@@ -121,16 +124,14 @@ const createWeeklyPickups = async () => {
       const pickupDate = getDateOfDay(pickupDay, weekOf);
       
       // Create the pickup
-      const pickup = new Pickup({
-        userId: client._id,
+      const pickup = await Pickup.create({
+        userId: client.id,
         routeId: client.routeId,
         scheduledDate: pickupDate,
         pickupDay,
         weekOf,
         status: 'scheduled'
       });
-      
-      await pickup.save();
       pickupsCreated.push(pickup);
     }
     
@@ -152,15 +153,16 @@ const markMissedPickups = async () => {
     const previousWeekOf = getStartOfWeek(previousWeekStart);
     
     // Find all scheduled pickups from the previous week
-    const scheduledPickups = await Pickup.find({
-      status: 'scheduled',
-      weekOf: previousWeekOf
+    const scheduledPickups = await Pickup.findAll({
+      where: {
+        status: 'scheduled',
+        weekOf: previousWeekOf
+      }
     });
     
     // Mark them as missed
     for (const pickup of scheduledPickups) {
-      pickup.status = 'missed';
-      await pickup.save();
+      await pickup.update({ status: 'missed' });
     }
     
     return scheduledPickups;

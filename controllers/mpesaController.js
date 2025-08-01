@@ -1,7 +1,5 @@
-const Payment = require('../models/Payment');
-const Invoice = require('../models/Invoice');
-const Overpayment = require('../models/Overpayment');
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { Payment, Invoice, Overpayment, User } = require('../models');
 const mpesaService = require('../services/mpesa');
 
 // Initiate STK Push
@@ -17,8 +15,11 @@ const initiateSTKPush = async (req, res) => {
       });
     }
 
-    // Find user by account number
-    const user = await User.findOne({ accountNumber });
+    // Find user by account number - FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -64,8 +65,6 @@ const initiateSTKPush = async (req, res) => {
   }
 };
 
-// STK Push now uses C2B confirmation - no separate callback needed
-
 // C2B Validation
 const c2bValidation = async (req, res) => {
   try {
@@ -73,9 +72,11 @@ const c2bValidation = async (req, res) => {
 
     const { BillRefNumber, MSISDN, FirstName, LastName } = req.body;
 
-    // // Validate account number exists
-    // const user = await User.findOne({ accountNumber: BillRefNumber });
-    
+    // Uncomment and fix if you want to validate account number
+    // const user = await User.findOne({
+    //   where: { accountNumber: BillRefNumber }
+    // });
+
     // if (!user) {
     //   return res.status(200).json({
     //     ResultCode: 'C2B00012',
@@ -113,15 +114,17 @@ const c2bConfirmation = async (req, res) => {
       LastName
     } = req.body;
 
-      const user = await User.findOne({ accountNumber: BillRefNumber });
-    
+    // FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber: BillRefNumber }
+    });
+
     if (!user) {
       return res.status(200).json({
-          ResultCode: '0',
-           ResultDesc: 'User is not on account database'
+        ResultCode: '0',
+        ResultDesc: 'User is not on account database'
       });
     }
-
 
     // Process the payment
     await processSuccessfulPayment({
@@ -160,81 +163,165 @@ const processSuccessfulPayment = async (paymentData) => {
       payerName,
     } = paymentData;
 
-    // Find user by account number
-    const user = await User.findOne({ accountNumber });
+    console.log('Processing payment with amount:', amount, 'type:', typeof amount);
+    console.log('Parsed amount:', parseFloat(amount));
+
+    // Find user by account number - FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber }
+    });
+
     if (!user) {
       console.error('User not found for account:', accountNumber);
       return;
     }
 
-    // Find oldest unpaid invoice
-    const unpaidInvoice = await Invoice.findOne({
-      userId: user._id,
-      status: { $in: ['pending', 'partial', 'overdue'] }
-    }).sort({ dueDate: 1 });
+    // Find all unpaid invoices - FIXED: converted to Sequelize syntax
+    const unpaidInvoices = await Invoice.findAll({
+      where: {
+        userId: user.id,
+        [Op.or]: [
+          { paymentStatus: { [Op.in]: ['unpaid', 'partially_paid'] } },
+          // For backward compatibility with existing invoices
+          { status: { [Op.in]: ['pending', 'due', 'partial', 'overdue', 'upcoming'] }, paymentStatus: { [Op.eq]: null } }
+        ]
+      },
+      order: [['dueDate', 'ASC']] // FIXED: converted from MongoDB .sort() to Sequelize order
+    });
 
-    // Create payment record
-    const payment = new Payment({
-      userId: user._id,
+    // Create payment record - FIXED: converted from MongoDB to Sequelize
+    const paymentRecord = {
+      userId: user.id,
       accountNumber,
       amount: parseFloat(amount),
       paymentMethod: 'mpesa',
       transactionId: mpesaReceiptNumber,
       mpesaReceiptNumber,
       phoneNumber,
-      invoiceId: unpaidInvoice?._id || null,
+      invoiceId: unpaidInvoices.length > 0 ? unpaidInvoices[0].id : null,
       status: 'completed',
+      allocationStatus: 'unallocated',
+      allocatedAmount: 0,
+      remainingAmount: parseFloat(amount),
       paidAt: new Date(),
       metadata: {
         payerName
       }
-    });
+    };
 
-    await payment.save();
+    const payment = await Payment.create(paymentRecord);
     const paymentAmount = parseFloat(amount);
+    
+    console.log('Payment amount after parsing:', paymentAmount);
+    console.log('Found unpaid invoices:', unpaidInvoices.length);
+    if (unpaidInvoices.length > 0) {
+      console.log('First invoice balance:', unpaidInvoices[0].remainingBalance);
+    }
 
-    if (!unpaidInvoice) {
-      // No pending invoice - save entire amount as overpayment
-      const overpayment = new Overpayment({
-        userId: user._id,
+    if (unpaidInvoices.length === 0) {
+      // No pending invoice - mark payment as unallocated and save as overpayment
+      await payment.update({
+        allocationStatus: 'unallocated',
+        allocatedAmount: 0,
+        remainingAmount: paymentAmount
+      });
+
+      const overpaymentData = {
+        userId: user.id,
         accountNumber,
-        paymentId: payment._id,
+        paymentId: payment.id,
         amount: paymentAmount,
         remainingAmount: paymentAmount,
         notes: 'Payment received without pending invoice'
-      });
-      await overpayment.save();
+      };
+
+      await Overpayment.create(overpaymentData);
       console.log(`No invoice found - saved KES ${amount} as overpayment for account ${accountNumber}`);
       return;
     }
 
-    // Process payment against invoice
-    const invoiceBalance = unpaidInvoice.remainingBalance;
+    // Process payment against invoices (similar to paymentController logic)
+    let remainingPaymentAmount = paymentAmount;
+    let allocatedAmount = 0;
+    const updatedInvoices = [];
+    const invoiceAllocations = [];
+    const invoiceIds = [];
 
-    if (paymentAmount >= invoiceBalance) {
-      // Payment covers the invoice completely
-      unpaidInvoice.amountPaid += invoiceBalance;
-      unpaidInvoice.updateBalance();
-      await unpaidInvoice.save();
+    // Allocate payment to invoices until payment is fully allocated or no more invoices
+    for (const invoice of unpaidInvoices) {
+      if (remainingPaymentAmount <= 0) break;
 
-      // Handle overpayment
-      const overpaymentAmount = paymentAmount - invoiceBalance;
-      if (overpaymentAmount > 0) {
-        const overpayment = new Overpayment({
-          userId: user._id,
-          accountNumber,
-          paymentId: payment._id,
-          amount: overpaymentAmount,
-          remainingAmount: overpaymentAmount
-        });
-        await overpayment.save();
+      const invoiceBalance = parseFloat(invoice.remainingBalance);
+      const amountToAllocate = Math.min(remainingPaymentAmount, invoiceBalance);
+      
+      console.log(`Invoice ${invoice.id}: balance=${invoiceBalance}, allocating=${amountToAllocate}`);
+
+      // Update invoice - FIXED: use Sequelize update method
+      const newAmountPaid = parseFloat(invoice.amountPaid || 0) + amountToAllocate;
+      const newRemainingBalance = parseFloat(invoice.totalAmount) - newAmountPaid;
+
+      // Determine payment status
+      let paymentStatus = 'unpaid';
+      if (newAmountPaid >= invoice.totalAmount) {
+        paymentStatus = 'fully_paid';
+      } else if (newAmountPaid > 0) {
+        paymentStatus = 'partially_paid';
       }
-    } else {
-      // Partial payment
-      unpaidInvoice.amountPaid += paymentAmount;
-      unpaidInvoice.updateBalance();
-      await unpaidInvoice.save();
+
+      await invoice.update({
+        amountPaid: newAmountPaid,
+        remainingBalance: newRemainingBalance,
+        paymentStatus: paymentStatus
+      });
+
+      updatedInvoices.push(invoice);
+
+      // Track invoice allocations
+      invoiceAllocations.push({
+        invoiceId: invoice.id,
+        amount: amountToAllocate
+      });
+      invoiceIds.push(invoice.id);
+
+      // Update payment allocation
+      remainingPaymentAmount -= amountToAllocate;
+      allocatedAmount += amountToAllocate;
     }
+
+    // Update payment with multiple invoice tracking
+    const paymentUpdateData = {
+      allocatedAmount: allocatedAmount,
+      remainingAmount: remainingPaymentAmount,
+      invoiceAllocations: invoiceAllocations,
+      invoiceIds: invoiceIds
+    };
+
+    // Keep the old invoiceId field for backward compatibility (first invoice)
+    if (invoiceIds.length > 0) {
+      paymentUpdateData.invoiceId = invoiceIds[0];
+    }
+
+    if (allocatedAmount === 0) {
+      paymentUpdateData.allocationStatus = 'unallocated';
+    } else if (remainingPaymentAmount > 0) {
+      paymentUpdateData.allocationStatus = 'partially_allocated'; // Payment has remaining amount, so partially allocated
+
+      // Handle overpayment - FIXED: use Sequelize create
+      const overpaymentData = {
+        userId: user.id,
+        accountNumber,
+        paymentId: payment.id,
+        amount: remainingPaymentAmount,
+        remainingAmount: remainingPaymentAmount,
+        notes: 'Overpayment after invoice allocation'
+      };
+
+      await Overpayment.create(overpaymentData);
+    } else {
+      paymentUpdateData.allocationStatus = 'fully_allocated'; // All payment amount was allocated to invoices
+    }
+
+    await payment.update(paymentUpdateData);
 
     console.log(`Payment processed successfully for account ${accountNumber}: KES ${amount}`);
 

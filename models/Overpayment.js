@@ -1,58 +1,85 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const overpaymentSchema = new mongoose.Schema({
+const Overpayment = sequelize.define('Overpayment', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   accountNumber: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   paymentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Payment',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Payments',
+      key: 'id'
+    }
   },
   amount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   currency: {
-    type: String,
-    default: 'KES',
-    required: true
+    type: DataTypes.STRING,
+    defaultValue: 'KES',
+    allowNull: false
   },
   status: {
-    type: String,
-    enum: ['available', 'applied', 'refunded'],
-    default: 'available'
+    type: DataTypes.ENUM('available', 'applied', 'refunded'),
+    defaultValue: 'available'
   },
   appliedToInvoiceId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice'
+    type: DataTypes.INTEGER,
+    references: {
+      model: 'Invoices',
+      key: 'id'
+    }
   },
   appliedAmount: {
-    type: Number,
-    default: 0,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
   },
   remainingAmount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   notes: {
-    type: String
+    type: DataTypes.TEXT
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  hooks: {
+    beforeCreate: (overpayment) => {
+      if (!overpayment.remainingAmount) {
+        overpayment.remainingAmount = overpayment.amount;
+      }
+    }
+  }
 });
 
-// Update remaining amount when applied
-overpaymentSchema.methods.applyToInvoice = function(invoiceId, amount) {
+// Instance method
+Overpayment.prototype.applyToInvoice = function(invoiceId, amount) {
   this.appliedToInvoiceId = invoiceId;
   this.appliedAmount += amount;
   this.remainingAmount -= amount;
@@ -63,12 +90,4 @@ overpaymentSchema.methods.applyToInvoice = function(invoiceId, amount) {
   }
 };
 
-// Pre-save middleware
-overpaymentSchema.pre('save', function(next) {
-  if (!this.remainingAmount) {
-    this.remainingAmount = this.amount;
-  }
-  next();
-});
-
-module.exports = mongoose.model('Overpayment', overpaymentSchema);
+module.exports = Overpayment;

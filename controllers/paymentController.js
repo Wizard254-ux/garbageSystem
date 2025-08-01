@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Payment = require('../models/Payment');
 const Invoice = require('../models/Invoice');
 const Overpayment = require('../models/Overpayment');
@@ -16,8 +17,11 @@ const processPayment = async (req, res) => {
       transactionId 
     } = req.body;
 
-    // Find user by account number
-    const user = await User.findOne({ accountNumber });
+    // Find user by account number - FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -26,19 +30,22 @@ const processPayment = async (req, res) => {
     }
 
     // Find all unpaid or partially paid invoices for this user, sorted by due date (oldest first)
-    const unpaidInvoices = await Invoice.find({
-      userId: user._id,
-      $or: [
-        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
-        // For backward compatibility with existing invoices
-        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
-      ]
-    }).sort({ dueDate: 1 });
+    const unpaidInvoices = await Invoice.findAll({
+      where: {
+        userId: user.id,
+        [Op.or]: [
+          { paymentStatus: { [Op.in]: ['unpaid', 'partially_paid'] } },
+          // For backward compatibility with existing invoices
+          { status: { [Op.in]: ['pending', 'partial', 'overdue'] }, paymentStatus: { [Op.eq]: null } }
+        ]
+      },
+      order: [['dueDate', 'ASC']]
+    });
 
     if (unpaidInvoices.length === 0) {
       // Create payment record with no invoice allocation
-      const payment = new Payment({
-        userId: user._id,
+      const payment = await Payment.create({
+        userId: user.id,
         accountNumber,
         amount: parseFloat(amount),
         paymentMethod,
@@ -51,8 +58,6 @@ const processPayment = async (req, res) => {
         paidAt: new Date()
       });
 
-      await payment.save();
-
       return res.status(200).json({
         success: true,
         message: 'Payment recorded successfully. No pending invoices found.',
@@ -61,8 +66,8 @@ const processPayment = async (req, res) => {
     }
 
     // Create payment record
-    const payment = new Payment({
-      userId: user._id,
+    const payment = await Payment.create({
+      userId: user.id,
       accountNumber,
       amount: parseFloat(amount),
       paymentMethod,
@@ -75,12 +80,12 @@ const processPayment = async (req, res) => {
       paidAt: new Date()
     });
 
-    await payment.save();
-
     // Process payment against invoices
     let remainingPaymentAmount = parseFloat(amount);
     let allocatedAmount = 0;
     const updatedInvoices = [];
+    const invoiceAllocations = [];
+    const invoiceIds = [];
 
     // Allocate payment to invoices until payment is fully allocated or no more invoices
     for (const invoice of unpaidInvoices) {
@@ -89,35 +94,60 @@ const processPayment = async (req, res) => {
       const invoiceBalance = invoice.remainingBalance;
       const amountToAllocate = Math.min(remainingPaymentAmount, invoiceBalance);
 
-      // Update invoice
-      invoice.amountPaid += amountToAllocate;
-      invoice.updateBalance(); // This will update status to 'paid', 'partial', or 'overdue'
-      await invoice.save();
+      // Update invoice - FIXED: use Sequelize update method
+      const newAmountPaid = (invoice.amountPaid || 0) + amountToAllocate;
+      const newRemainingBalance = invoice.totalAmount - newAmountPaid;
+
+      // Determine payment status
+      let paymentStatus = 'unpaid';
+      if (newAmountPaid >= invoice.totalAmount) {
+        paymentStatus = 'fully_paid';
+      } else if (newAmountPaid > 0) {
+        paymentStatus = 'partially_paid';
+      }
+
+      await invoice.update({
+        amountPaid: newAmountPaid,
+        remainingBalance: newRemainingBalance,
+        paymentStatus: paymentStatus
+      });
+
       updatedInvoices.push(invoice);
+
+      // Track invoice allocations
+      invoiceAllocations.push({
+        invoiceId: invoice.id,
+        amount: amountToAllocate
+      });
+      invoiceIds.push(invoice.id);
 
       // Update payment allocation
       remainingPaymentAmount -= amountToAllocate;
       allocatedAmount += amountToAllocate;
     }
 
-    // Update payment allocation status
-    payment.allocatedAmount = allocatedAmount;
-    payment.remainingAmount = remainingPaymentAmount;
-    
+    // Update payment allocation status - FIXED: use Sequelize update
+    const paymentUpdateData = {
+      allocatedAmount: allocatedAmount,
+      remainingAmount: remainingPaymentAmount,
+      invoiceAllocations: invoiceAllocations,
+      invoiceIds: invoiceIds
+    };
+
     if (allocatedAmount === 0) {
-      payment.allocationStatus = 'unallocated';
+      paymentUpdateData.allocationStatus = 'unallocated';
     } else if (remainingPaymentAmount > 0) {
-      payment.allocationStatus = 'partially_allocated';
+      paymentUpdateData.allocationStatus = 'partially_allocated'; // Payment has remaining amount, so partially allocated
     } else {
-      payment.allocationStatus = 'fully_allocated';
+      paymentUpdateData.allocationStatus = 'fully_allocated'; // All payment amount was allocated to invoices
     }
 
-    // If first invoice was allocated to, set it as the invoiceId
-    if (updatedInvoices.length > 0) {
-      payment.invoiceId = updatedInvoices[0]._id;
+    // Keep backward compatibility - set first invoice as invoiceId
+    if (invoiceIds.length > 0) {
+      paymentUpdateData.invoiceId = invoiceIds[0];
     }
 
-    await payment.save();
+    await payment.update(paymentUpdateData);
 
     res.status(200).json({
       success: true,
@@ -142,10 +172,12 @@ const processPayment = async (req, res) => {
 // Generate monthly invoices (cron job)
 const generateMonthlyInvoices = async (req, res) => {
   try {
-    const clients = await User.find({ 
-      role: 'client', 
-      isActive: true,
-      serviceStartDate: { $exists: true }
+    const clients = await User.findAll({
+      where: {
+        role: 'client',
+        isActive: true,
+        serviceStartDate: { [Op.ne]: null }
+      }
     });
 
     const invoicesCreated = [];
@@ -154,99 +186,129 @@ const generateMonthlyInvoices = async (req, res) => {
     for (const client of clients) {
       // Check if client should have an invoice this month
       const serviceStart = new Date(client.serviceStartDate);
-      const monthsSinceStart = (currentDate.getFullYear() - serviceStart.getFullYear()) * 12 + 
+      const monthsSinceStart = (currentDate.getFullYear() - serviceStart.getFullYear()) * 12 +
                               (currentDate.getMonth() - serviceStart.getMonth());
-
-      // Skip if client was just created (less than a month ago)
-      if (monthsSinceStart <= 0) {
-        continue;
-      }
 
       // Calculate billing period
       const billingStart = new Date(serviceStart);
       billingStart.setMonth(serviceStart.getMonth() + monthsSinceStart);
-      
+
       const billingEnd = new Date(billingStart);
       billingEnd.setMonth(billingStart.getMonth() + 1);
       billingEnd.setDate(billingEnd.getDate() - 1);
 
-      // Check if invoice already exists for this period
+      // Check if invoice already exists for this period - FIXED: removed triple "where"
       const existingInvoice = await Invoice.findOne({
-        userId: client._id,
-        'billingPeriod.start': billingStart,
-        'billingPeriod.end': billingEnd
+        where: {
+          userId: client.id,
+          billingPeriodStart: billingStart,
+          billingPeriodEnd: billingEnd
+        }
       });
 
       if (!existingInvoice) {
-        // Check for available payments with remaining amounts
-        const availablePayments = await Payment.find({
-          userId: client._id,
-          status: 'completed',
-          allocationStatus: { $in: ['unallocated', 'partially_allocated'] },
-          remainingAmount: { $gt: 0 }
-        }).sort({ createdAt: 1 });
-
-        let totalAvailableAmount = availablePayments.reduce((sum, payment) => sum + payment.remainingAmount, 0);
-        let invoiceAmount = client.monthlyRate;
-        let amountPaid = 0;
-
-        // Apply available payment amounts one by one until invoice is paid
-        if (totalAvailableAmount > 0) {
-          let remainingInvoiceAmount = invoiceAmount;
-          
-          for (const payment of availablePayments) {
-            if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
-            
-            const amountToApply = Math.min(payment.remainingAmount, remainingInvoiceAmount);
-            
-            // Apply payment to invoice
-            payment.allocatedAmount += amountToApply;
-            payment.remainingAmount -= amountToApply;
-            amountPaid += amountToApply;
-            remainingInvoiceAmount -= amountToApply;
-            
-            // Update payment allocation status
-            if (payment.remainingAmount <= 0) {
-              payment.allocationStatus = 'fully_allocated';
-            } else {
-              payment.allocationStatus = 'partially_allocated';
-            }
-            
-            await payment.save();
-          }
-        }
-
-        // Calculate due date based on grace period
-        const gracePeriod = client.gracePeriod || 5; // Default to 5 days if not set
-        const dueDate = new Date(billingEnd);
-        dueDate.setDate(dueDate.getDate() + gracePeriod);
-
-        // Create new invoice
-        const invoice = new Invoice({
-          userId: client._id,
-          accountNumber: client.accountNumber,
-          billingPeriod: {
-            start: billingStart,
-            end: billingEnd
+        // Check for available payments with remaining amounts AND overpayments
+        const availablePayments = await Payment.findAll({
+          where: {
+            userId: client.id,
+            status: 'completed',
+            allocationStatus: { [Op.in]: ['unallocated', 'partially_allocated'] },
+            remainingAmount: { [Op.gt]: 0 }
           },
-          totalAmount: invoiceAmount,
-          amountPaid: amountPaid,
-          remainingBalance: invoiceAmount - amountPaid,
-          dueDate: dueDate,
-          paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
-          dueStatus: 'due' // Will be updated to 'overdue' by the updateBalance method if past due date
+          order: [['createdAt', 'ASC']]
         });
 
-        await invoice.save();
+        const availableOverpayments = await Overpayment.findAll({
+          where: {
+            userId: client.id,
+            remainingAmount: { [Op.gt]: 0 }
+          },
+          order: [['createdAt', 'ASC']]
+        });
+
+        let invoiceAmount = client.monthlyRate;
+        let amountPaid = 0;
+        let remainingInvoiceAmount = invoiceAmount;
+
+        // Create the invoice first to get the ID for payment linking
+        const invoice = await Invoice.create({
+          userId: client.id,
+          accountNumber: client.accountNumber,
+          billingPeriodStart: billingStart,
+          billingPeriodEnd: billingEnd,
+          totalAmount: invoiceAmount,
+          amountPaid: 0, // Start with 0, will be updated
+          remainingBalance: invoiceAmount,
+          dueDate: new Date(billingEnd.getTime() + (client.gracePeriod || 5) * 24 * 60 * 60 * 1000),
+          paymentStatus: 'unpaid',
+          dueStatus: 'due'
+        });
+
+        // First, apply available payments
+        for (const payment of availablePayments) {
+          if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
+
+          const amountToApply = Math.min(payment.remainingAmount, remainingInvoiceAmount);
+
+          // Apply payment to invoice - FIXED: use Sequelize update
+          const currentAllocated = payment.allocatedAmount || 0;
+          const currentRemaining = payment.remainingAmount || 0;
+          const currentAllocations = payment.invoiceAllocations || [];
+          const currentIds = payment.invoiceIds || [];
+
+          await payment.update({
+            allocatedAmount: currentAllocated + amountToApply,
+            remainingAmount: currentRemaining - amountToApply,
+            invoiceAllocations: [
+              ...currentAllocations,
+              { invoiceId: invoice.id, amount: amountToApply }
+            ],
+            invoiceIds: [...currentIds, invoice.id],
+            allocationStatus: (currentRemaining - amountToApply) <= 0 ? 'fully_allocated' : 'partially_allocated'
+          });
+
+          amountPaid += amountToApply;
+          remainingInvoiceAmount -= amountToApply;
+        }
+
+        // Then, apply available overpayments if invoice is still not fully paid
+        for (const overpayment of availableOverpayments) {
+          if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
+
+          const amountToApply = Math.min(overpayment.remainingAmount, remainingInvoiceAmount);
+
+          // Update overpayment - FIXED: use Sequelize update instead of model method
+          await overpayment.update({
+            remainingAmount: overpayment.remainingAmount - amountToApply,
+            appliedAmount: (overpayment.appliedAmount || 0) + amountToApply,
+            appliedInvoices: [
+              ...(overpayment.appliedInvoices || []),
+              { invoiceId: invoice.id, amount: amountToApply }
+            ]
+          });
+
+          amountPaid += amountToApply;
+          remainingInvoiceAmount -= amountToApply;
+        }
+
+        // Update the invoice with final payment amounts
+        await invoice.update({
+          amountPaid: amountPaid,
+          remainingBalance: remainingInvoiceAmount,
+          paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
+          dueStatus: amountPaid >= invoiceAmount ? 'paid' : 'due'
+        });
+
         invoicesCreated.push(invoice);
 
         // Send invoice email
         try {
           await sendInvoiceEmail(client, invoice);
-          invoice.emailSent = true;
-          invoice.emailSentAt = new Date();
-          await invoice.save();
-          
+          await invoice.update({
+            emailSent: true,
+            emailSentAt: new Date()
+          });
+
           // If overpayment was applied, send notification
           if (amountPaid > 0) {
             await sendOverpaymentNotification(client, invoice, amountPaid);
@@ -257,19 +319,19 @@ const generateMonthlyInvoices = async (req, res) => {
       } else if (existingInvoice.paymentStatus !== 'fully_paid') {
         // Check if invoice is now overdue based on due date
         if (new Date() > existingInvoice.dueDate && existingInvoice.dueStatus !== 'overdue') {
-          existingInvoice.dueStatus = 'overdue';
-          // For backward compatibility
-          if (existingInvoice.paymentStatus === 'unpaid') {
-            existingInvoice.status = 'overdue';
-          }
-          await existingInvoice.save();
-          
+          await existingInvoice.update({
+            dueStatus: 'overdue',
+            // For backward compatibility
+            status: existingInvoice.paymentStatus === 'unpaid' ? 'overdue' : existingInvoice.status
+          });
+
           // Send overdue notification
           try {
             await sendInvoiceEmail(client, existingInvoice, true); // true indicates overdue notification
-            existingInvoice.emailSent = true;
-            existingInvoice.emailSentAt = new Date();
-            await existingInvoice.save();
+            await existingInvoice.update({
+              emailSent: true,
+              emailSentAt: new Date()
+            });
           } catch (emailError) {
             console.error(`Failed to send overdue notification to ${client.email}:`, emailError);
           }
@@ -299,7 +361,11 @@ const getPaymentHistory = async (req, res) => {
     const { accountNumber } = req.params;
     const { page = 1, limit = 10 } = req.query;
 
-    const user = await User.findOne({ accountNumber });
+    // FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -307,14 +373,16 @@ const getPaymentHistory = async (req, res) => {
       });
     }
 
-    const payments = await Payment.find({ userId: user._id })
-      .populate('invoiceId')
-      .sort({ createdAt: -1 })
-      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const payments = await Payment.findAll({
+      where: { userId: user.id },
+      include: [{ model: Invoice, as: 'invoice', attributes: ['invoiceNumber'] }],
+      attributes: ['id', 'accountNumber', 'amount', 'paymentMethod', 'mpesaReceiptNumber', 'phoneNumber', 'status', 'allocationStatus', 'allocatedAmount', 'remainingAmount', 'createdAt', 'invoiceId'],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
 
-    const totalPayments = await Payment.countDocuments({ userId: user._id });
+    const totalPayments = await Payment.count({ where: { userId: user.id } });
 
     res.status(200).json({
       success: true,
@@ -338,20 +406,21 @@ const getPaymentHistory = async (req, res) => {
     });
   }
 };
-// Get payment history
+
+// Get full payment history
 const getFullPaymentHistory = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
 
+    const payments = await Payment.findAll({
+      include: [{ model: Invoice, as: 'invoice', attributes: ['invoiceNumber'] }],
+      attributes: ['id', 'accountNumber', 'amount', 'paymentMethod', 'mpesaReceiptNumber', 'phoneNumber', 'status', 'allocationStatus', 'allocatedAmount', 'remainingAmount', 'createdAt', 'invoiceId'],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
 
-    const payments = await Payment.find()
-      .populate('invoiceId')
-      .sort({ createdAt: -1 })
-      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt invoiceId')
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const totalPayments = await Payment.countDocuments({ userId: User._id });
+    const totalPayments = await Payment.count();
 
     res.status(200).json({
       success: true,
@@ -382,7 +451,11 @@ const getAccountStatement = async (req, res) => {
     const { accountNumber } = req.params;
     const { startDate, endDate } = req.query;
 
-    const user = await User.findOne({ accountNumber });
+    // FIXED: removed double "where"
+    const user = await User.findOne({
+      where: { accountNumber }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -390,18 +463,18 @@ const getAccountStatement = async (req, res) => {
       });
     }
 
-    let dateFilter = { userId: user._id };
+    let dateFilter = { userId: user.id };
     if (startDate && endDate) {
       dateFilter.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        [Op.gte]: new Date(startDate),
+        [Op.lte]: new Date(endDate)
       };
     }
 
     const [invoices, payments, overpayments] = await Promise.all([
-      Invoice.find(dateFilter).sort({ createdAt: -1 }),
-      Payment.find(dateFilter).populate('invoiceId').sort({ createdAt: -1 }),
-      Overpayment.find(dateFilter).sort({ createdAt: -1 })
+      Invoice.findAll({ where: dateFilter, order: [['createdAt', 'DESC']] }),
+      Payment.findAll({ where: dateFilter, include: [{ model: Invoice, as: 'invoice' }], order: [['createdAt', 'DESC']] }),
+      Overpayment.findAll({ where: dateFilter, order: [['createdAt', 'DESC']] })
     ]);
 
     const summary = {
@@ -455,7 +528,7 @@ const createManualInvoice = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findById(userId);
+    const user = await User.findByPk(userId);
     if (!user || user.role !== 'client') {
       return res.status(404).json({
         success: false,
@@ -463,66 +536,106 @@ const createManualInvoice = async (req, res) => {
       });
     }
 
-    // Check for available overpayments
-    const availableOverpayments = await Overpayment.find({
-      userId: user._id,
-      status: 'available',
-      remainingAmount: { $gt: 0 }
-    }).sort({ createdAt: 1 });
+    // Check for available payments with remaining amounts AND overpayments
+    const availablePayments = await Payment.findAll({
+      where: {
+        userId: user.id,
+        status: 'completed',
+        allocationStatus: { [Op.in]: ['unallocated', 'partially_allocated'] },
+        remainingAmount: { [Op.gt]: 0 }
+      },
+      order: [['createdAt', 'ASC']]
+    });
 
-    let totalOverpayment = availableOverpayments.reduce((sum, op) => sum + op.remainingAmount, 0);
+    const availableOverpayments = await Overpayment.findAll({
+      where: {
+        userId: user.id,
+        remainingAmount: { [Op.gt]: 0 }
+      },
+      order: [['createdAt', 'ASC']]
+    });
+
     let invoiceAmount = parseFloat(totalAmount);
     let amountPaid = 0;
+    let remainingInvoiceAmount = invoiceAmount;
 
-    // Apply overpayments one by one until invoice is paid
-    if (totalOverpayment > 0) {
-      let remainingInvoiceAmount = invoiceAmount;
-      
-      for (const overpayment of availableOverpayments) {
-        if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
-        
-        const amountToApply = Math.min(overpayment.remainingAmount, remainingInvoiceAmount);
-        
-        // Apply overpayment to invoice
-        overpayment.appliedAmount += amountToApply;
-        overpayment.remainingAmount -= amountToApply;
-        amountPaid += amountToApply;
-        remainingInvoiceAmount -= amountToApply;
-        
-        // Update overpayment status if fully used
-        if (overpayment.remainingAmount <= 0) {
-          overpayment.status = 'applied';
-        }
-        
-        await overpayment.save();
-      }
-    }
-
-    // Create invoice
-    const invoice = new Invoice({
-      userId: user._id,
+    // Create invoice first to get the ID for payment linking
+    const invoice = await Invoice.create({
+      userId: user.id,
       accountNumber: user.accountNumber,
-      billingPeriod: {
-        start: new Date(billingPeriodStart),
-        end: new Date(billingPeriodEnd)
-      },
+      billingPeriodStart: new Date(billingPeriodStart),
+      billingPeriodEnd: new Date(billingPeriodEnd),
       totalAmount: invoiceAmount,
-      amountPaid: amountPaid,
-      remainingBalance: invoiceAmount - amountPaid,
+      amountPaid: 0, // Start with 0, will be updated
+      remainingBalance: invoiceAmount,
       dueDate: new Date(dueDate),
-      paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
+      paymentStatus: 'unpaid',
       dueStatus: new Date() > new Date(dueDate) ? 'overdue' : 'due'
     });
 
-    await invoice.save();
+    // First, apply available payments
+    for (const payment of availablePayments) {
+      if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
+
+      const amountToApply = Math.min(payment.remainingAmount, remainingInvoiceAmount);
+
+      // Apply payment to invoice - FIXED: use Sequelize update
+      const currentAllocated = payment.allocatedAmount || 0;
+      const currentRemaining = payment.remainingAmount || 0;
+      const currentAllocations = payment.invoiceAllocations || [];
+      const currentIds = payment.invoiceIds || [];
+
+      await payment.update({
+        allocatedAmount: currentAllocated + amountToApply,
+        remainingAmount: currentRemaining - amountToApply,
+        invoiceAllocations: [
+          ...currentAllocations,
+          { invoiceId: invoice.id, amount: amountToApply }
+        ],
+        invoiceIds: [...currentIds, invoice.id],
+        allocationStatus: (currentRemaining - amountToApply) <= 0 ? 'fully_allocated' : 'partially_allocated'
+      });
+
+      amountPaid += amountToApply;
+      remainingInvoiceAmount -= amountToApply;
+    }
+
+    // Then, apply available overpayments if invoice is still not fully paid
+    for (const overpayment of availableOverpayments) {
+      if (remainingInvoiceAmount <= 0) break; // Invoice fully paid
+
+      const amountToApply = Math.min(overpayment.remainingAmount, remainingInvoiceAmount);
+
+      // Update overpayment - FIXED: use Sequelize update instead of model method
+      await overpayment.update({
+        remainingAmount: overpayment.remainingAmount - amountToApply,
+        appliedAmount: (overpayment.appliedAmount || 0) + amountToApply,
+        appliedInvoices: [
+          ...(overpayment.appliedInvoices || []),
+          { invoiceId: invoice.id, amount: amountToApply }
+        ]
+      });
+
+      amountPaid += amountToApply;
+      remainingInvoiceAmount -= amountToApply;
+    }
+
+    // Update the invoice with final payment amounts
+    await invoice.update({
+      amountPaid: amountPaid,
+      remainingBalance: remainingInvoiceAmount,
+      paymentStatus: amountPaid >= invoiceAmount ? 'fully_paid' : amountPaid > 0 ? 'partially_paid' : 'unpaid',
+      dueStatus: amountPaid >= invoiceAmount ? 'paid' : (new Date() > new Date(dueDate) ? 'overdue' : 'due')
+    });
 
     // Send emails
     try {
       await sendInvoiceEmail(user, invoice);
-      invoice.emailSent = true;
-      invoice.emailSentAt = new Date();
-      await invoice.save();
-      
+      await invoice.update({
+        emailSent: true,
+        emailSentAt: new Date()
+      });
+
       if (amountPaid > 0) {
         await sendOverpaymentNotification(user, invoice, amountPaid);
       }
@@ -559,11 +672,13 @@ const getClientPaymentInfo = async (req, res) => {
   try {
     const { clientId } = req.params;
 
-    // Find client
+    // Find client - FIXED: removed triple "where"
     const client = await User.findOne({
-      _id: clientId,
-      role: 'client',
-      organizationId: req.user._id
+      where: {
+        id: clientId,
+        role: 'client',
+        organizationId: req.user.id
+      }
     });
 
     if (!client) {
@@ -574,27 +689,34 @@ const getClientPaymentInfo = async (req, res) => {
     }
 
     // Get unpaid invoices
-    const unpaidInvoices = await Invoice.find({
-      userId: client._id,
-      $or: [
-        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
-        // For backward compatibility with existing invoices
-        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
-      ]
-    }).sort({ dueDate: 1 });
+    const unpaidInvoices = await Invoice.findAll({
+      where: {
+        userId: client.id,
+        [Op.or]: [
+          { paymentStatus: { [Op.in]: ['unpaid', 'partially_paid'] } },
+          // For backward compatibility with existing invoices
+          { status: { [Op.in]: ['pending', 'partial', 'overdue'] }, paymentStatus: { [Op.eq]: null } }
+        ]
+      },
+      order: [['dueDate', 'ASC']]
+    });
 
     // Get payment history
-    const payments = await Payment.find({ userId: client._id })
-      .populate('invoiceId')
-      .sort({ createdAt: -1 })
-      .select('_id accountNumber amount paymentMethod mpesaReceiptNumber phoneNumber status allocationStatus allocatedAmount remainingAmount createdAt')
-      .limit(10);
+    const payments = await Payment.findAll({
+      where: { userId: client.id },
+      include: [{ model: Invoice, as: 'invoice', attributes: ['invoiceNumber'] }],
+      attributes: ['id', 'accountNumber', 'amount', 'paymentMethod', 'mpesaReceiptNumber', 'phoneNumber', 'status', 'allocationStatus', 'allocatedAmount', 'remainingAmount', 'createdAt', 'invoiceId'],
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
 
     // Get overpayments
-    const overpayments = await Overpayment.find({
-      userId: client._id,
-      status: 'available',
-      remainingAmount: { $gt: 0 }
+    const overpayments = await Overpayment.findAll({
+      where: {
+        userId: client.id,
+        status: 'available',
+        remainingAmount: { [Op.gt]: 0 }
+      }
     });
 
     const totalUnpaidAmount = unpaidInvoices.reduce((sum, inv) => sum + inv.remainingBalance, 0);
@@ -604,7 +726,7 @@ const getClientPaymentInfo = async (req, res) => {
       success: true,
       data: {
         client: {
-          id: client._id,
+          id: client.id,
           name: client.name,
           email: client.email,
           accountNumber: client.accountNumber,
@@ -635,23 +757,28 @@ const getClientPaymentInfo = async (req, res) => {
 const getOrganizationStats = async (req, res) => {
   try {
     // Get all clients in organization
-    const clients = await User.find({
-      role: 'client',
-      organizationId: req.user._id,
-      isActive: true
+    const clients = await User.findAll({
+      where: {
+        role: 'client',
+        organizationId: req.user.id,
+        isActive: true
+      }
     });
 
-    const clientIds = clients.map(c => c._id);
+    const clientIds = clients.map(c => c.id);
 
     // Get unpaid invoices
-    const unpaidInvoices = await Invoice.find({
-      userId: { $in: clientIds },
-      $or: [
-        { paymentStatus: { $in: ['unpaid', 'partially_paid'] } },
-        // For backward compatibility with existing invoices
-        { status: { $in: ['pending', 'partial', 'overdue'] }, paymentStatus: { $exists: false } }
-      ]
-    }).populate('userId', 'name accountNumber');
+    const unpaidInvoices = await Invoice.findAll({ 
+      where: {
+        userId: { [Op.in]: clientIds },
+        [Op.or]: [
+          { paymentStatus: { [Op.in]: ['unpaid', 'partially_paid'] } },
+          // For backward compatibility with existing invoices
+          { status: { [Op.in]: ['pending', 'partial', 'overdue'] }, paymentStatus: { [Op.eq]: null } }
+        ]
+      },
+      include: [{ model: User, as: 'user', attributes: ['name', 'accountNumber'] }] 
+    });
 
     // Get total amounts
     const totalUnpaidAmount = unpaidInvoices.reduce((sum, inv) => sum + inv.remainingBalance, 0);
@@ -660,10 +787,10 @@ const getOrganizationStats = async (req, res) => {
 
     // Group by client
     const clientsWithUnpaidInvoices = unpaidInvoices.reduce((acc, invoice) => {
-      const clientId = invoice.userId._id.toString();
+      const clientId = invoice.userId.toString();
       if (!acc[clientId]) {
         acc[clientId] = {
-          client: invoice.userId,
+          client: invoice.user,
           invoices: [],
           totalAmount: 0
         };

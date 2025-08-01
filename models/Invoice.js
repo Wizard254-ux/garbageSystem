@@ -1,86 +1,188 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const invoiceSchema = new mongoose.Schema({
+const Invoice = sequelize.define('Invoice', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   invoiceNumber: {
-    type: String,
+    type: DataTypes.STRING,
     unique: true
   },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  accountNumber: {
-    type: String,
-    required: true
-  },
-  billingPeriod: {
-    start: {
-      type: Date,
-      required: true
-    },
-    end: {
-      type: Date,
-      required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
     }
   },
+  accountNumber: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  billingPeriodStart: {
+    type: DataTypes.DATE,
+    allowNull: false
+  },
+  billingPeriodEnd: {
+    type: DataTypes.DATE,
+    allowNull: false
+  },
   totalAmount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   amountPaid: {
-    type: Number,
-    default: 0,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
   },
   remainingBalance: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   paymentStatus: {
-    type: String,
-    enum: ['unpaid', 'partially_paid', 'fully_paid'],
-    default: 'unpaid'
+    type: DataTypes.ENUM('unpaid', 'partially_paid', 'fully_paid'),
+    defaultValue: 'unpaid'
   },
   dueStatus: {
-    type: String,
-    enum: ['due', 'overdue'],
-    default: 'due'
+    type: DataTypes.ENUM('due', 'overdue', 'upcoming', 'paid'),
+    defaultValue: 'due'
   },
   dueDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATE,
+    allowNull: false
   },
   issuedDate: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   },
   emailSent: {
-    type: Boolean,
-    default: false
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   emailSentAt: {
-    type: Date
+    type: DataTypes.DATE
+  },
+  status: {
+    type: DataTypes.STRING
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  hooks: {
+    beforeCreate: (invoice) => {
+     if (!invoice.invoiceNumber) {
+        const year = String(new Date().getFullYear()).slice(-2); // '24' instead of '2024'
+        const month = String(new Date().getMonth() + 1).padStart(2, '0'); // '07'
+        const randomNum = Math.floor(100 + Math.random() * 900); // 3-digit random number
+        invoice.invoiceNumber = `INV${year}${month}-${randomNum}`; // e.g., "I2407-738"
+      }
+
+      
+      // Update balance logic
+      invoice.remainingBalance = invoice.totalAmount - (invoice.amountPaid || 0);
+      
+      if (invoice.remainingBalance <= 0) {
+        invoice.paymentStatus = 'fully_paid';
+        invoice.remainingBalance = 0;
+      } else if ((invoice.amountPaid || 0) > 0) {
+        invoice.paymentStatus = 'partially_paid';
+      } else {
+        invoice.paymentStatus = 'unpaid';
+      }
+      
+      if (invoice.paymentStatus !== 'fully_paid') {
+        const now = new Date();
+        const billingEnd = invoice.billingPeriodEnd ? new Date(invoice.billingPeriodEnd) : null;
+        
+        if (billingEnd && now > billingEnd) {
+          if (now > invoice.dueDate) {
+            invoice.dueStatus = 'overdue';
+          } else {
+            invoice.dueStatus = 'due';
+          }
+        } else {
+          invoice.dueStatus = 'upcoming';
+        }
+      } else {
+        invoice.dueStatus = 'paid';
+      }
+      
+      if (invoice.paymentStatus === 'fully_paid') {
+        invoice.status = 'paid';
+      } else if (invoice.dueStatus === 'overdue') {
+        invoice.status = 'overdue';
+      } else if (invoice.paymentStatus === 'partially_paid') {
+        invoice.status = 'partial';
+      } else {
+        invoice.status = 'pending';
+      }
+    },
+    beforeUpdate: (invoice) => {
+      // Update balance logic
+      invoice.remainingBalance = invoice.totalAmount - (invoice.amountPaid || 0);
+      
+      if (invoice.remainingBalance <= 0) {
+        invoice.paymentStatus = 'fully_paid';
+        invoice.remainingBalance = 0;
+      } else if ((invoice.amountPaid || 0) > 0) {
+        invoice.paymentStatus = 'partially_paid';
+      } else {
+        invoice.paymentStatus = 'unpaid';
+      }
+      
+      if (invoice.paymentStatus !== 'fully_paid') {
+        const now = new Date();
+        const billingEnd = invoice.billingPeriodEnd ? new Date(invoice.billingPeriodEnd) : null;
+        
+        if (billingEnd && now > billingEnd) {
+          if (now > invoice.dueDate) {
+            invoice.dueStatus = 'overdue';
+          } else {
+            invoice.dueStatus = 'due';
+          }
+        } else {
+          invoice.dueStatus = 'upcoming';
+        }
+      } else {
+        invoice.dueStatus = 'paid';
+      }
+      
+      if (invoice.paymentStatus === 'fully_paid') {
+        invoice.status = 'paid';
+      } else if (invoice.dueStatus === 'overdue') {
+        invoice.status = 'overdue';
+      } else if (invoice.paymentStatus === 'partially_paid') {
+        invoice.status = 'partial';
+      } else {
+        invoice.status = 'pending';
+      }
+    }
+  }
 });
 
-// Generate invoice number
-invoiceSchema.methods.generateInvoiceNumber = function() {
+// Instance methods
+Invoice.prototype.generateInvoiceNumber = function() {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   return `INV-${year}${month}-${randomNum}`;
 };
 
-// Calculate remaining balance and update statuses
-invoiceSchema.methods.updateBalance = function() {
+Invoice.prototype.updateBalance = function() {
   this.remainingBalance = this.totalAmount - this.amountPaid;
   
-  // Update payment status
   if (this.remainingBalance <= 0) {
     this.paymentStatus = 'fully_paid';
     this.remainingBalance = 0;
@@ -90,32 +192,23 @@ invoiceSchema.methods.updateBalance = function() {
     this.paymentStatus = 'unpaid';
   }
   
-  // Update due status
-  // An invoice is 'due' when the billing period has ended but hasn't passed the grace period yet
-  // An invoice is 'overdue' when the current date is past the billing period end + grace period (due date)
   if (this.paymentStatus !== 'fully_paid') {
     const now = new Date();
-    const billingEnd = this.billingPeriod?.end ? new Date(this.billingPeriod.end) : null;
+    const billingEnd = this.billingPeriodEnd ? new Date(this.billingPeriodEnd) : null;
     
     if (billingEnd && now > billingEnd) {
-      // Billing period has ended
       if (now > this.dueDate) {
-        // Past grace period (overdue)
         this.dueStatus = 'overdue';
       } else {
-        // Within grace period (due)
         this.dueStatus = 'due';
       }
     } else {
-      // Billing period hasn't ended yet
       this.dueStatus = 'upcoming';
     }
   } else {
-    // If fully paid, it's neither due nor overdue
     this.dueStatus = 'paid';
   }
   
-  // For backward compatibility with existing code
   if (this.paymentStatus === 'fully_paid') {
     this.status = 'paid';
   } else if (this.dueStatus === 'overdue') {
@@ -127,15 +220,4 @@ invoiceSchema.methods.updateBalance = function() {
   }
 };
 
-// Pre-save middleware
-invoiceSchema.pre('save', function(next) {
-  // Always generate invoice number if not present
-  if (!this.invoiceNumber) {
-    this.invoiceNumber = this.generateInvoiceNumber();
-  }
-  // Always update balance and status
-  this.updateBalance();
-  next();
-});
-
-module.exports = mongoose.model('Invoice', invoiceSchema);
+module.exports = Invoice;

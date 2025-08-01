@@ -1,49 +1,67 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const pickupSchema = new mongoose.Schema({
+const Pickup = sequelize.define('Pickup', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   routeId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Route',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Routes',
+      key: 'id'
+    }
   },
   driverId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
+    type: DataTypes.INTEGER,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   scheduledDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATE,
+    allowNull: false
   },
   pickupDay: {
-    type: String,
-    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-    required: true
+    type: DataTypes.ENUM('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'),
+    allowNull: false
   },
   weekOf: {
-    type: Date,
-    required: true
+    type: DataTypes.DATE,
+    allowNull: false
   },
   status: {
-    type: String,
-    enum: ['scheduled', 'completed', 'missed'],
-    default: 'scheduled'
+    type: DataTypes.ENUM('pending', 'assigned', 'in_progress', 'completed', 'missed', 'scheduled'),
+    defaultValue: 'pending'
+  },
+  bagsCollected: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
   },
   completedAt: {
-    type: Date,
-    default: null
+    type: DataTypes.DATE
   },
   notes: {
-    type: String,
-    default: ''
+    type: DataTypes.TEXT,
+    defaultValue: ''
   }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.model('Pickup', pickupSchema);
+module.exports = Pickup;

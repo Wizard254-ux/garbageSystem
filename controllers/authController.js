@@ -1,9 +1,7 @@
-const User = require('../models/User');
-const Route = require('../models/Route');
+const { User, Route } = require('../models');
 const jwt = require('jsonwebtoken');
 const {verificationCodes} = require('../services/mail');
-const mongoose = require('mongoose');
-const ObjectId = mongoose.Types.ObjectId;
+const { Op } = require('sequelize');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -35,7 +33,9 @@ const register = async (req, res) => {
 
     // Check if user already exists
     const existingUser = await User.findOne({
-        $or: [{ email }, { phone }]
+        where: {
+          [Op.or]: [{ email }, { phone }]
+        }
       });
 
         if (existingUser) {
@@ -66,7 +66,7 @@ const register = async (req, res) => {
       role,
       documents: req.filePaths || [],
       phone,
-      createdBy: req.user ? req.user._id : null 
+      createdBy: req.user ? req.user.id : null 
     };
     
     console.log('Creating user with data:', { 
@@ -92,7 +92,7 @@ const register = async (req, res) => {
     }
     
     if (role === 'driver') {
-      userData.organizationId = req.user._id;
+      userData.organizationId = req.user.id;
       userData.isActive = true; // Set driver status to active by default
       userData.isSent = false; // Track if credentials have been sent
     }
@@ -112,7 +112,7 @@ const register = async (req, res) => {
           }
 
           // Validate route
-          const validRoute = await Route.findById(route);
+          const validRoute = await Route.findByPk(route);
           if (!validRoute) {
             return res.status(400).json({ message: 'Invalid route.' });
           }
@@ -144,11 +144,11 @@ const register = async (req, res) => {
             userData.numberOfUnits = 1; // Default to 1 unit for residential
           }
 
-          userData.routeId = validRoute._id;
+          userData.routeId = validRoute.id;
           userData.address = address;
           userData.clientType = clientType;
           userData.serviceStartDate = startDate;
-          userData.organizationId = req.user._id;
+          userData.organizationId = req.user.id;
     }
 
 
@@ -158,7 +158,7 @@ const register = async (req, res) => {
     if (role === 'client') {
       try {
         const { createInitialPickup } = require('../services/pickupService');
-        await createInitialPickup(user._id);
+        await createInitialPickup(user.id);
       } catch (pickupError) {
         console.error('Failed to create initial pickup:', pickupError);
         // Continue with user creation even if pickup creation fails
@@ -166,13 +166,13 @@ const register = async (req, res) => {
     }
     
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
     setCookieToken(res, token);
 
     res.status(201).json({
       message: 'User created successfully.',
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -193,7 +193,7 @@ const login = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user || !user.isActive) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
@@ -205,14 +205,14 @@ const login = async (req, res) => {
     }
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
     setCookieToken(res, token);
     console.log(user)
 
     res.json({
       message: 'Login successful.',
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -234,7 +234,7 @@ const getProfile = async (req, res) => {
   try {
     res.json({
       user: {
-        id: req.user._id,
+        id: req.user.id,
         name: req.user.name,
         email: req.user.email,
         role: req.user.role,
@@ -270,7 +270,7 @@ const manageOrganization = async (req, res) => {
     let organization=null
     if(organizationId){
 
-       organization = await User.findById(organizationId);
+       organization = await User.findByPk(organizationId);
        console.log("Organization:", organization);
       if (!organization || organization.role !== 'organization') {
         return res.status(404).json({ 
@@ -280,7 +280,7 @@ const manageOrganization = async (req, res) => {
 
     
 
-    if(req.user._id.toString() !== organization.createdBy.toString()) {
+    if(req.user.id !== organization.createdBy) {
       return res.status(403).json({"message": "You are not authorized to manage this organization."})
     }
   }
@@ -345,71 +345,68 @@ const listOrganizations = async (req, res) => {
     const { page = 1, limit = 10, search = '', isActive, sortBy = 'createdAt', sortOrder = 'desc' } = req.body;
 
     // Build query for organizations
-    const query = {
+    const whereClause = {
       role: 'organization'
     };
 
     // Add search filter
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+      whereClause[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+        { phone: { [Op.iLike]: `%${search}%` } }
       ];
     }
 
-    // Add isActive filter
-    // if (isActive !== undefined) {
-    //   query.isActive = isActive === 'true';
-    // }
-
     // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Build sort object
-    const sortOptions = {};
-    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
-
-    // Get organizations with pagination - USE THE BUILT QUERY
-    console.log('query ',query)
-    const organizations = await User.find(query)
-      .select('-password')
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    // Get total count - USE THE BUILT QUERY
-    const totalOrganizations = await User.countDocuments(query);
+    // Get organizations with pagination
+    const { count: totalOrganizations, rows: organizations } = await User.findAndCountAll({
+      where: whereClause,
+      attributes: { exclude: ['password'] },
+      order: [[sortBy, sortOrder.toUpperCase()]],
+      offset,
+      limit: parseInt(limit)
+    });
     console.log(totalOrganizations)
 
     // Get detailed information for each organization
     const organizationsWithDetails = await Promise.all(
       organizations.map(async (org) => {
         // Count drivers and clients for each organization
-        const driversCount = await User.countDocuments({
-          role: 'driver',
-          organizationId: org._id
+        const driversCount = await User.count({
+          where: {
+            role: 'driver',
+            organizationId: org.id
+          }
         });
 
-        const clientsCount = await User.countDocuments({
-          role: 'client',
-          organizationId: org._id
+        const clientsCount = await User.count({
+          where: {
+            role: 'client',
+            organizationId: org.id
+          }
         });
 
-        const activeDriversCount = await User.countDocuments({
-          role: 'driver',
-          organizationId: org._id,
-          isActive: true
+        const activeDriversCount = await User.count({
+          where: {
+            role: 'driver',
+            organizationId: org.id,
+            isActive: true
+          }
         });
 
-        const activeClientsCount = await User.countDocuments({
-          role: 'client',
-          organizationId: org._id,
-          isActive: true
+        const activeClientsCount = await User.count({
+          where: {
+            role: 'client',
+            organizationId: org.id,
+            isActive: true
+          }
         });
 
         return {
-          id: org._id,
+          id: org.id,
           name: org.name,
           email: org.email,
           phone: org.phone,
@@ -434,7 +431,7 @@ const listOrganizations = async (req, res) => {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalOrganizations / parseInt(limit)),
         totalOrganizations,
-        hasNext: skip + organizations.length < totalOrganizations,
+        hasNext: offset + organizations.length < totalOrganizations,
         hasPrev: parseInt(page) > 1,
         limit: parseInt(limit)
       },
@@ -469,15 +466,23 @@ const getOrganizationDetails = async (req, res,organization) => {
     }
 
     // Get all drivers and clients for this organization
-    const drivers = await User.find({
-      role: 'driver',
-      organizationId: organization._id
-    }).select('-password').sort({ createdAt: -1 });
+    const drivers = await User.findAll({
+      where: {
+        role: 'driver',
+        organizationId: organization.id
+      },
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
 
-    const clients = await User.find({
-      role: 'client',
-      organizationId: organization._id
-    }).select('-password').sort({ createdAt: -1 });
+    const clients = await User.findAll({
+      where: {
+        role: 'client',
+        organizationId: organization.id
+      },
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
 
     // Calculate statistics
     const stats = {
@@ -494,7 +499,7 @@ const getOrganizationDetails = async (req, res,organization) => {
         acc[client.route] = [];
       }
       acc[client.route].push({
-        id: client._id,
+        id: client.id,
         name: client.name,
         email: client.email,
         phone: client.phone,
@@ -511,7 +516,7 @@ const getOrganizationDetails = async (req, res,organization) => {
         acc[client.pickUpDay] = [];
       }
       acc[client.pickUpDay].push({
-        id: client._id,
+        id: client.id,
         name: client.name,
         route: client.route,
         address: client.address,
@@ -523,7 +528,7 @@ const getOrganizationDetails = async (req, res,organization) => {
     res.json({
       message: 'Organization details retrieved successfully.',
       organization: {
-        id: organization._id,
+        id: organization.id,
         name: organization.name,
         email: organization.email,
         phone: organization.phone,
@@ -533,7 +538,7 @@ const getOrganizationDetails = async (req, res,organization) => {
       },
       statistics: stats,
       drivers: drivers.map(driver => ({
-        id: driver._id,
+        id: driver.id,
         name: driver.name,
         email: driver.email,
         phone: driver.phone,
@@ -541,7 +546,7 @@ const getOrganizationDetails = async (req, res,organization) => {
         createdAt: driver.createdAt
       })),
       clients: clients.map(client => ({
-        id: client._id,
+        id: client.id,
         name: client.name,
         email: client.email,
         phone: client.phone,
@@ -585,23 +590,26 @@ const getOrganizationStats = async (req, res, organization) => {
     }
 
     // Get overall statistics
-    const totalOrganizations = await User.countDocuments({ role: 'organization' });
-    const activeOrganizations = await User.countDocuments({ role: 'organization', isActive: true });
-    const totalDrivers = await User.countDocuments({ role: 'driver' });
-    const activeDrivers = await User.countDocuments({ role: 'driver', isActive: true });
-    const totalClients = await User.countDocuments({ role: 'client' });
-    const activeClients = await User.countDocuments({ role: 'client', isActive: true });
+    const totalOrganizations = await User.count({ where: { role: 'organization' } });
+    const activeOrganizations = await User.count({ where: { role: 'organization', isActive: true } });
+    const totalDrivers = await User.count({ where: { role: 'driver' } });
+    const activeDrivers = await User.count({ where: { role: 'driver', isActive: true } });
+    const totalClients = await User.count({ where: { role: 'client' } });
+    const activeClients = await User.count({ where: { role: 'client', isActive: true } });
 
     // Get organizations with their user counts
-    const organizations = await User.find({ role: 'organization' }).select('-password');
+    const organizations = await User.findAll({ 
+      where: { role: 'organization' },
+      attributes: { exclude: ['password'] }
+    });
     
     const organizationStats = await Promise.all(
       organizations.map(async (org) => {
-        const driverCount = await User.countDocuments({ role: 'driver', organizationId: org._id });
-        const clientCount = await User.countDocuments({ role: 'client', organizationId: org._id });
+        const driverCount = await User.count({ where: { role: 'driver', organizationId: org.id } });
+        const clientCount = await User.count({ where: { role: 'client', organizationId: org.id } });
         
         return {
-          id: org._id,
+          id: org.id,
           name: org.name,
           isActive: org.isActive,
           driverCount,
@@ -688,11 +696,16 @@ const editOrganization = async (req, res, organization, updateData) => {
     }
 
     // Update organization
-    const updatedOrganization = await User.findByIdAndUpdate(
-      organization._id,
-      filteredUpdateData,
-      { new: true, runValidators: true }
-    );
+    const [updatedCount] = await User.update(filteredUpdateData, {
+      where: { id: organization.id },
+      returning: true
+    });
+    
+    if (updatedCount === 0) {
+      return res.status(404).json({ message: 'Organization not found.' });
+    }
+    
+    const updatedOrganization = await User.findByPk(organization.id);
 
     res.json({
       message: 'Organization updated successfully.',
@@ -719,8 +732,8 @@ const editOrganization = async (req, res, organization, updateData) => {
 const deleteOrganization = async (req, res, organization) => {
   try {
     // Check if organization has associated drivers or clients
-    const associatedUsers = await User.find({ 
-      organizationId: organization._id 
+    const associatedUsers = await User.findAll({ 
+      where: { organizationId: organization.id }
     });
 
     if (associatedUsers.length > 0) {
@@ -730,12 +743,12 @@ const deleteOrganization = async (req, res, organization) => {
     }
 
     // Delete organization
-    await User.findByIdAndDelete(organization._id);
+    await User.destroy({ where: { id: organization.id } });
 
     res.json({
       message: 'Organization deleted successfully.',
       deletedOrganization: {
-        id: organization._id,
+        id: organization.id,
         name: organization.name,
         email: organization.email
       }
@@ -749,12 +762,19 @@ const deleteOrganization = async (req, res, organization) => {
 const manageOrganizationUsers = async (req, res) => {
   try {
     const { action, userType, userId, updateData } = req.body;
-    console.log(req.body)
+    console.log('manageOrganizationUsers request body:', req.body)
 
     // Validation
     if (!action || !userType) {
       return res.status(400).json({ 
         message: 'Action and userType are required.' 
+      });
+    }
+
+    // Additional validation for actions that require userId
+    if (['edit', 'delete', 'get'].includes(action.toLowerCase()) && !userId) {
+      return res.status(400).json({ 
+        message: `userId is required for ${action} action.` 
       });
     }
 
@@ -793,10 +813,13 @@ const manageOrganizationUsers = async (req, res) => {
         return await listUsers(req, res, userType.toLowerCase());
       case 'get':
         const user=await User.findOne({
-          _id: userId,
-          role: userType,
-          createdBy: req.user._id
-        }).select('-password','-payment');
+          where: {
+            id: userId,
+            role: userType,
+            createdBy: req.user.id
+          },
+          attributes: { exclude: ['password', 'paymentId'] }
+        });
 
         return res.status(200).json({
           message: `${userType.charAt(0).toUpperCase() + userType.slice(1)} retrieved successfully.`,
@@ -828,10 +851,12 @@ const editUser = async (req, res, userType, userId, updateData) => {
 
     // Find user and verify it belongs to the organization
     const user = await User.findOne({
-      _id: userId,
-      role: userType,
-      organizationId: req.user._id,
-      createdBy: req.user._id
+      where: {
+        id: userId,
+        role: userType,
+        organizationId: req.user.id,
+        createdBy: req.user.id
+      }
     });
 
     if (!user) {
@@ -907,22 +932,24 @@ const editUser = async (req, res, userType, userId, updateData) => {
 
     // Check for duplicate email or phone if they're being updated
     if (filteredUpdateData.email || filteredUpdateData.phone) {
-      const duplicateQuery = {
-        _id: { $ne: user._id },
-        $or: []
-      };
+      const orConditions = [];
 
       // Only check for duplicates if the value is actually changing
       if (filteredUpdateData.email && filteredUpdateData.email !== user.email) {
-        duplicateQuery.$or.push({ email: filteredUpdateData.email });
+        orConditions.push({ email: filteredUpdateData.email });
       }
       if (filteredUpdateData.phone && filteredUpdateData.phone !== user.phone) {
-        duplicateQuery.$or.push({ phone: filteredUpdateData.phone });
+        orConditions.push({ phone: filteredUpdateData.phone });
       }
 
       // Only run the query if we're actually checking for duplicates
-      if (duplicateQuery.$or && duplicateQuery.$or.length > 0) {
-        const existingUser = await User.findOne(duplicateQuery);
+      if (orConditions.length > 0) {
+        const existingUser = await User.findOne({
+          where: {
+            id: { [Op.ne]: user.id },
+            [Op.or]: orConditions
+          }
+        });
         if (existingUser) {
           return res.status(400).json({ 
             message: 'Email or phone already exists.' 
@@ -932,14 +959,11 @@ const editUser = async (req, res, userType, userId, updateData) => {
     }
 
     // Update user
-    const updatedUser = await User.findByIdAndUpdate(
-      user._id,
-      filteredUpdateData,
-      { new: true, runValidators: true }
-    );
+    await user.update(filteredUpdateData);
+    const updatedUser = await User.findByPk(user.id);
 
     const responseUser = {
-      id: updatedUser._id,
+      id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
       phone: updatedUser.phone,
@@ -975,11 +999,12 @@ const deleteUser = async (req, res, userType, userId) => {
   try {
     // Find user and verify it belongs to the organization
     const user = await User.findOne({
-      _id: userId,
-      role: userType,
-      organizationId: req.user._id,
-      createdBy: req.user._id
-
+      where: {
+        id: userId,
+        role: userType,
+        organizationId: req.user.id,
+        createdBy: req.user.id
+      }
     });
 
     if (!user) {
@@ -989,12 +1014,12 @@ const deleteUser = async (req, res, userType, userId) => {
     }
 
     // Delete user
-    await User.findByIdAndDelete(user._id);
+    await User.destroy({ where: { id: user.id } });
 
     res.json({
       message: `${userType.charAt(0).toUpperCase() + userType.slice(1)} deleted successfully.`,
       deletedUser: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role
@@ -1009,44 +1034,29 @@ const deleteUser = async (req, res, userType, userId) => {
 const listUsers = async (req, res, userType) => {
   try {
     const { page = 1, limit = 10, search = '', isActive } = req.query;
-       console.log(userType,req.user._id)
+       console.log(userType,req.user.id)
 
     // Build query
-    const query = {
+    const whereClause = {
       role: userType,
-      createdBy:req.user._id
+      createdBy: req.user.id
     };
 
-    // Add search filter
-    // if (search) {
-    //   query.$or = [
-    //     { name: { $regex: search, $options: 'i' } },
-    //     { email: { $regex: search, $options: 'i' } },
-    //     { phone: { $regex: search, $options: 'i' } }
-    //   ];
-    // }
-
-    // Add isActive filter
-    // if (isActive !== undefined) {
-    //   query.isActive = isActive === 'true';
-    // }
-
     // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // Get users with pagination
-    const users = await User.find(query)
-      .select('-password')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    // Get total count
-    const totalUsers = await User.countDocuments(query);
+    const { count: totalUsers, rows: users } = await User.findAndCountAll({
+      where: whereClause,
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']],
+      offset,
+      limit: parseInt(limit)
+    });
 
     const responseUsers = users.map(user => {
       const userObj = {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         phone: user.phone,
@@ -1055,7 +1065,7 @@ const listUsers = async (req, res, userType) => {
         isSent: user.isSent,
         createdBy: user.createdBy,
         createdAt: user.createdAt,
-        organizationId:req.user._id,
+        organizationId: req.user.id,
         accountNumber:user.accountNumber
         
       };
@@ -1079,7 +1089,7 @@ const listUsers = async (req, res, userType) => {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalUsers / parseInt(limit)),
         totalUsers,
-        hasNext: skip + users.length < totalUsers,
+        hasNext: offset + users.length < totalUsers,
         hasPrev: parseInt(page) > 1
       }
     });
@@ -1125,8 +1135,8 @@ const changePassword = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findOne({ email });
-    if (!user || user._id.toString() !== storedData.userId) {
+    const user = await User.findOne({ where: { email } });
+    if (!user || user.id !== parseInt(storedData.userId)) {
       return res.status(404).json({ 
         message: 'User not found.' 
       });
@@ -1190,9 +1200,11 @@ const sendDriverCredentials = async (req, res) => {
 
     // Find driver
     const driver = await User.findOne({
-      _id: driverId,
-      role: 'driver',
-      organizationId: req.user._id
+      where: {
+        id: driverId,
+        role: 'driver',
+        organizationId: req.user.id
+      }
     });
 
     if (!driver) {
@@ -1213,7 +1225,7 @@ const sendDriverCredentials = async (req, res) => {
 
     res.json({
       message: 'Driver credentials sent successfully.',
-      driverId: driver._id,
+      driverId: driver.id,
       email: driver.email
     });
 

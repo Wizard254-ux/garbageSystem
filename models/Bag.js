@@ -1,45 +1,62 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const bagSchema = new mongoose.Schema({
+const Bag = sequelize.define('Bag', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   client_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   recipient_email: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isEmail: true
+    }
   },
   number_of_bags: {
-    type: Number,
-    required: true,
-    min: 1
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: 1
+    }
   },
   verification_code: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   is_verified: {
-    type: Boolean,
-    default: false
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   verification_timestamp: {
-    type: Date
+    type: DataTypes.DATE
   },
   distribution_timestamp: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   },
   driver_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   notes: {
-    type: String
+    type: DataTypes.TEXT
   }
-}, { timestamps: true });
-
-const Bag = mongoose.model('Bag', bagSchema);
+}, {
+  timestamps: true
+});
 
 module.exports = Bag;

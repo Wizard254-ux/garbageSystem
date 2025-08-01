@@ -1,5 +1,4 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -8,10 +7,10 @@ const morgan = require('morgan');
 
 require('dotenv').config();
 
+const { sequelize } = require('./models');
 const authRoutes= require('./routes/authRoutes');
 const routeRouter = require('./routes/routes');
 const pickUpRouter = require('./routes/pickUp');
-const pickupRouter = require('./routes/pickup');
 const paymentRouter = require('./routes/payment');
 const mpesaRouter = require('./routes/mpesa');
 const invoiceRouter = require('./routes/invoices');
@@ -29,16 +28,21 @@ app.use(cors({ credentials: true, origin: process.env.CLIENT_URL || 'http://loca
 app.use(express.json());
 
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MySQL and sync models
+sequelize.authenticate()
+  .then(() => {
+    console.log('Connected to MySQL database');
+    // For initial setup, use force: true to recreate tables
+    // Change to { alter: true } after first successful run
+    // return sequelize.sync({ alter: true });
+  })
+  .then(() => console.log('Database synchronized'))
+  .catch(err => console.error('Database connection error:', err));
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/routes', routeRouter);
-app.use('/api/pickUps', pickUpRouter);
-app.use('/api/pickups', pickupRouter);
+app.use('/api/pickups', pickUpRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/api/invoices', invoiceRouter);
 app.use('/api/bags', bagRouter);

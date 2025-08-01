@@ -1,84 +1,104 @@
 // models/Payment.js
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const mongoose = require('mongoose');
-
-const paymentSchema = new mongoose.Schema({
+const Payment = sequelize.define('Payment', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   accountNumber: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   amount: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   currency: {
-    type: String,
-    default: 'KES',
-    required: true
+    type: DataTypes.STRING,
+    defaultValue: 'KES',
+    allowNull: false
   },
   paymentMethod: {
-    type: String,
-    enum: ['mpesa', 'paybill', 'card', 'bank_transfer', 'cash'],
-    required: true
+    type: DataTypes.ENUM('mpesa', 'paybill', 'card', 'bank_transfer', 'cash'),
+    allowNull: false
   },
   transactionId: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true
   },
   mpesaReceiptNumber: {
-    type: String,
-    required: function() {
-      return this.paymentMethod === 'mpesa' || this.paymentMethod === 'paybill';
-    }
+    type: DataTypes.STRING
   },
   phoneNumber: {
-    type: String,
-    required: function() {
-      return this.paymentMethod === 'mpesa' || this.paymentMethod === 'paybill';
-    }
+    type: DataTypes.STRING
   },
   invoiceId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice',
+    type: DataTypes.INTEGER,
+    references: {
+      model: 'Invoices',
+      key: 'id'
+    }
+  },
+  invoiceIds: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  },
+  invoiceAllocations: {
+    type: DataTypes.JSON,
+    defaultValue: []
   },
   status: {
-    type: String,
-    enum: ['pending', 'completed', 'failed', 'cancelled'],
-    default: 'pending'
+    type: DataTypes.ENUM('pending', 'completed', 'failed', 'cancelled'),
+    defaultValue: 'pending'
   },
   allocationStatus: {
-    type: String,
-    enum: ['unallocated', 'partially_allocated', 'fully_allocated'],
-    default: 'unallocated'
+    type: DataTypes.ENUM('unallocated', 'partially_allocated', 'fully_allocated'),
+    defaultValue: 'unallocated'
   },
   allocatedAmount: {
-    type: Number,
-    default: 0,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
   },
   remainingAmount: {
-    type: Number,
-    default: function() {
-      return this.amount;
-    },
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    validate: {
+      min: 0
+    }
   },
   paidAt: {
-    type: Date
+    type: DataTypes.DATE
   },
   metadata: {
-    type: Object,
-    default: {}
-  },
+    type: DataTypes.JSON,
+    defaultValue: {}
+  }
 }, {
-  timestamps: true
+  timestamps: true,
+  hooks: {
+    beforeCreate: (payment) => {
+      if (!payment.remainingAmount) {
+        payment.remainingAmount = payment.amount;
+      }
+    }
+  }
 });
 
-module.exports = mongoose.model('Payment', paymentSchema);
+module.exports = Payment;

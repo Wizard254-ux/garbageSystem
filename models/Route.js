@@ -1,55 +1,79 @@
-const mongoose = require('mongoose');
-const express = require('express');
-const router = express.Router();
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-// Define the Route schema
-const routeSchema = new mongoose.Schema({
+const Route = sequelize.define('Route', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   path: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
-
   description: {
-    type: String,
-    trim: true
+    type: DataTypes.TEXT
   },
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
-
-
+  activeDriverId: {
+    type: DataTypes.INTEGER,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  driverActivatedAt: {
+    type: DataTypes.DATE
+  }
 }, {
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['path']
+    },
+    {
+      fields: ['name']
+    },
+    {
+      fields: ['isActive']
+    }
+  ]
 });
 
-// Create indexes for better performance
-routeSchema.index({ path: 1, method: 1 }, { unique: true });
-routeSchema.index({ name: 1 });
-routeSchema.index({ isActive: 1 });
-
 // Instance methods
-routeSchema.methods.activate = function() {
+Route.prototype.activate = function() {
   this.isActive = true;
   return this.save();
 };
 
-routeSchema.methods.deactivate = function() {
+Route.prototype.deactivate = function() {
   this.isActive = false;
   return this.save();
 };
 
-// Static methods
-routeSchema.statics.findByPath = function(path) {
-  return this.find({ path: path, isActive: true });
+Route.prototype.activateDriver = function(driverId) {
+  this.activeDriverId = driverId;
+  this.driverActivatedAt = new Date();
+  return this.save();
 };
 
+Route.prototype.deactivateDriver = function() {
+  this.activeDriverId = null;
+  this.driverActivatedAt = null;
+  return this.save();
+};
 
-const Route = mongoose.model('Route', routeSchema);
+// Static methods
+Route.findByPath = function(path) {
+  return this.findAll({ where: { path: path, isActive: true } });
+};
+
 module.exports = Route;

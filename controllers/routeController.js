@@ -1,5 +1,6 @@
 
-const Route = require('../models/Route'); // Assuming you have a Route model defined
+const Route = require('../models/Route');
+const User = require('../models/User');
 const express = require('express');
 const app = express();
 
@@ -34,9 +35,14 @@ const manageRoutes = async(req,res) => {
         // Get routes based on filters
         const filters = { isActive: true, ...data };
         if (data.id) {
-          result = await Route.findById(data.id);
+          result = await Route.findByPk(data.id, {
+            include: [{ model: User, as: 'activeDriver', attributes: ['name', 'email'] }]
+          });
         } else {
-          result = await Route.find(filters);
+          result = await Route.findAll({
+            where: filters,
+            include: [{ model: User, as: 'activeDriver', attributes: ['name', 'email'] }]
+          });
         }
         return res.status(200).json({
           success: true,
@@ -52,11 +58,19 @@ const manageRoutes = async(req,res) => {
             error: 'Route ID is required for update action'
           });
         }
-        result = await Route.findByIdAndUpdate(
-          data.id,
-          { $set: data },
-          { new: true, runValidators: true }
-        );
+        const [updatedCount] = await Route.update(data, {
+          where: { id: data.id },
+          returning: true
+        });
+        
+        if (updatedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            error: 'Route not found'
+          });
+        }
+        
+        result = await Route.findByPk(data.id);
         if (!result) {
           return res.status(404).json({
             success: false,
@@ -77,7 +91,16 @@ const manageRoutes = async(req,res) => {
             error: 'Route ID is required for delete action'
           });
         }
-        result = await Route.findByIdAndDelete(data.id);
+        const deletedCount = await Route.destroy({ where: { id: data.id } });
+        
+        if (deletedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            error: 'Route not found'
+          });
+        }
+        
+        result = { id: data.id };
         if (!result) {
           return res.status(404).json({
             success: false,
@@ -98,7 +121,7 @@ const manageRoutes = async(req,res) => {
             error: 'Route ID is required for activate action'
           });
         }
-        const routeToActivate = await Route.findById(data.id);
+        const routeToActivate = await Route.findByPk(data.id);
         if (!routeToActivate) {
           return res.status(404).json({
             success: false,
@@ -120,7 +143,7 @@ const manageRoutes = async(req,res) => {
             error: 'Route ID is required for deactivate action'
           });
         }
-        const routeToDeactivate = await Route.findById(data.id);
+        const routeToDeactivate = await Route.findByPk(data.id);
         if (!routeToDeactivate) {
           return res.status(404).json({
             success: false,
@@ -158,6 +181,117 @@ const manageRoutes = async(req,res) => {
         return res.status(200).json({
           success: true,
           action: 'search',
+          data: result
+        });
+
+      case 'activate_driver':
+        console.log('Route activation request:', {
+          routeId: data.routeId,
+          userId: req.user?.id,
+          user: req.user
+        });
+        
+        // Check if user is authenticated
+        if (!req.user || !req.user.id) {
+          console.log('Route activation failed - no authenticated user');
+          return res.status(401).json({
+            success: false,
+            error: 'Authentication required'
+          });
+        }
+        
+        // Activate current driver on a route
+        if (!data.routeId) {
+          console.log('Route activation failed - no routeId provided');
+          return res.status(400).json({
+            success: false,
+            error: 'Route ID is required for activate_driver action'
+          });
+        }
+        const routeToActivateDriver = await Route.findByPk(data.routeId);
+        if (!routeToActivateDriver) {
+          return res.status(404).json({
+            success: false,
+            error: 'Route not found'
+          });
+        }
+        
+        // Check if route already has an active driver
+        if (routeToActivateDriver.activeDriverId && routeToActivateDriver.activeDriverId !== req.user.id) {
+          return res.status(409).json({
+            success: false,
+            error: 'Route already has an active driver',
+            activeDriver: routeToActivateDriver.activeDriverId
+          });
+        }
+        
+        console.log('Activating driver on route:', routeToActivateDriver.name);
+        result = await routeToActivateDriver.activateDriver(req.user.id);
+        console.log('Driver activation successful:', result.toJSON());
+        return res.status(200).json({
+          success: true,
+          action: 'activate_driver',
+          data: result,
+          message: `You are now active on route: ${result.name}`
+        });
+
+      case 'deactivate_driver':
+        console.log('Route deactivation request:', {
+          routeId: data.routeId,
+          userId: req.user?.id,
+          user: req.user
+        });
+        
+        // Check if user is authenticated
+        if (!req.user || !req.user.id) {
+          console.log('Route deactivation failed - no authenticated user');
+          return res.status(401).json({
+            success: false,
+            error: 'Authentication required'
+          });
+        }
+        
+        // Deactivate current driver from a route
+        if (!data.routeId) {
+          console.log('Route deactivation failed - no routeId provided');
+          return res.status(400).json({
+            success: false,
+            error: 'Route ID is required for deactivate_driver action'
+          });
+        }
+        const routeToDeactivateDriver = await Route.findByPk(data.routeId);
+        if (!routeToDeactivateDriver) {
+          return res.status(404).json({
+            success: false,
+            error: 'Route not found'
+          });
+        }
+        
+        // Check if current driver is the active driver
+        if (!routeToDeactivateDriver.activeDriverId || routeToDeactivateDriver.activeDriverId !== req.user.id) {
+          return res.status(403).json({
+            success: false,
+            error: 'You are not the active driver on this route'
+          });
+        }
+        
+        result = await routeToDeactivateDriver.deactivateDriver();
+        return res.status(200).json({
+          success: true,
+          action: 'deactivate_driver',
+          data: result,
+          message: `You are no longer active on route: ${result.name}`
+        });
+
+      case 'get_active_route':
+        // Get the route where current driver is active
+        result = await Route.findOne({
+          where: { activeDriverId: req.user.id },
+          include: [{ model: User, as: 'activeDriver', attributes: ['name', 'email'] }]
+        });
+        return res.status(200).json({
+          success: true,
+          action: 'get_active_route',
           data: result
         });
 

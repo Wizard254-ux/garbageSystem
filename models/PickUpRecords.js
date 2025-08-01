@@ -1,78 +1,85 @@
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const mongoose = require('mongoose');
-const express = require('express');
-const router = express.Router();
-
-// PickupRecords Schema
-const pickupRecordsSchema = new mongoose.Schema({
+const PickupRecords = sequelize.define('PickupRecords', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   user_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true // Ensure one record per user
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    unique: true,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
   pickup_dates: {
-    type: Map,
-    of: {
-      status: {
-        type: String,
-        enum: ['picked', 'unpicked'],
-        required: true
-      },
-      timestamp: {
-        type: Date,
-        default: Date.now
-      },
-      notes: String
-    },
-    default: new Map()
+    type: DataTypes.JSON,
+    defaultValue: {}
   }
 }, {
   timestamps: true
 });
 
-
 // Instance methods
-pickupRecordsSchema.methods.markAsPicked = function(date, notes = '') {
-  const dateKey = new Date(date).toISOString().split('T')[0]; // Format: YYYY-MM-DD
+PickupRecords.prototype.markAsPicked = function(date, notes = '') {
+  const dateKey = new Date(date).toISOString().split('T')[0];
+  const pickupDates = this.pickup_dates || {};
   
-  this.pickup_dates.set(dateKey, {
+  pickupDates[dateKey] = {
     status: 'picked',
     timestamp: new Date(),
     notes: notes
-  });
+  };
   
+  this.pickup_dates = pickupDates;
   return this.save();
 };
 
-pickupRecordsSchema.methods.markAsUnpicked = function(date, notes = '') {
+PickupRecords.prototype.markAsUnpicked = function(date, notes = '') {
   const dateKey = new Date(date).toISOString().split('T')[0];
+  const pickupDates = this.pickup_dates || {};
   
-  this.pickup_dates.set(dateKey, {
+  pickupDates[dateKey] = {
     status: 'unpicked',
     timestamp: new Date(),
     notes: notes
-  });
+  };
   
+  this.pickup_dates = pickupDates;
   return this.save();
 };
 
-pickupRecordsSchema.methods.getPickupStatus = function(date) {
+PickupRecords.prototype.getPickupStatus = function(date) {
   const dateKey = new Date(date).toISOString().split('T')[0];
-  return this.pickup_dates.get(dateKey);
+  const pickupDates = this.pickup_dates || {};
+  return pickupDates[dateKey];
 };
 
 // Static methods
-pickupRecordsSchema.statics.findByUserId = function(userId) {
-  return this.findOne({ user_id: userId });
+PickupRecords.findByUserId = function(userId) {
+  return this.findOne({ where: { user_id: userId } });
 };
 
-pickupRecordsSchema.statics.getUsersWithoutPickup = function(date) {
+PickupRecords.getUsersWithoutPickup = function(date) {
   const dateKey = new Date(date).toISOString().split('T')[0];
-  return this.find({
-    [`pickup_dates.${dateKey}`]: { $exists: false }
-  }).populate('user_id');
+  const { Op } = require('sequelize');
+  
+  return this.findAll({
+    where: {
+      [Op.or]: [
+        { pickup_dates: null },
+        sequelize.literal(`JSON_EXTRACT(pickup_dates, '$."${dateKey}"') IS NULL`)
+      ]
+    },
+    include: [{
+      model: require('./User'),
+      as: 'user'
+    }]
+  });
 };
 
-const PickupRecords = mongoose.model('PickupRecords', pickupRecordsSchema);
 module.exports = PickupRecords;
